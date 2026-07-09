@@ -1,0 +1,27 @@
+.vscode/*
+!.vscode/extensions.json
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+
+# SQLite database files
+*.db
+*.sqlite
+*.sqlite3
+backend/app.db
+
+# Uploaded user files (generated at runtime)
+backend/uploads/
+README.md

@@ -1,0 +1,205 @@
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Optional
+
+from pydantic import EmailStr
+from sqlalchemy import JSON, Column, DateTime
+from sqlmodel import Field, Relationship, SQLModel
+
+
+def get_datetime_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class UserBase(SQLModel):
+    email: EmailStr = Field(unique=True, index=True, max_length=255)
+    is_active: bool = True
+    is_superuser: bool = False
+    full_name: str | None = Field(default=None, max_length=255)
+
+
+class UserCreate(UserBase):
+    password: str = Field(min_length=8, max_length=128)
+
+
+class UserRegister(SQLModel):
+    email: EmailStr = Field(max_length=255)
+    password: str = Field(min_length=8, max_length=128)
+    full_name: str | None = Field(default=None, max_length=255)
+
+
+class UserUpdate(UserBase):
+    email: EmailStr | None = Field(default=None, max_length=255)  # type: ignore[assignment]
+    password: str | None = Field(default=None, min_length=8, max_length=128)
+
+
+class UserUpdateMe(SQLModel):
+    full_name: str | None = Field(default=None, max_length=255)
+    email: EmailStr | None = Field(default=None, max_length=255)
+
+
+class UpdatePassword(SQLModel):
+    current_password: str = Field(min_length=8, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class User(UserBase, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    hashed_password: str
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    documents: list["Document"] = Relationship(
+        back_populates="owner", cascade_delete=True
+    )
+
+
+class UserPublic(UserBase):
+    id: uuid.UUID
+    created_at: datetime | None = None
+
+
+class UsersPublic(SQLModel):
+    data: list[UserPublic]
+    count: int
+
+
+class DocumentStatus:
+    PENDING = "pending"
+    PROCESSING = "processing"
+    PROCESSED = "processed"
+    ERROR = "error"
+
+
+class ReviewStatus:
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class DocumentBase(SQLModel):
+    original_filename: str = Field(max_length=512)
+
+
+class Document(DocumentBase, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    filename: str = Field(max_length=512)
+    file_size: int = Field(default=0)
+    status: str = Field(default=DocumentStatus.PENDING, index=True, max_length=32)
+    page_count: int = Field(default=0)
+    key_value_pairs: list[dict[str, Any]] = Field(
+        default_factory=list, sa_column=Column(JSON, nullable=False, server_default="[]")
+    )
+    tables: list[dict[str, Any]] = Field(
+        default_factory=list, sa_column=Column(JSON, nullable=False, server_default="[]")
+    )
+    bol_kv_fields: list[dict[str, Any]] | None = Field(
+        default=None, sa_column=Column(JSON, nullable=True)
+    )
+    bol_line_items: list[dict[str, Any]] | None = Field(
+        default=None, sa_column=Column(JSON, nullable=True)
+    )
+    error_message: str | None = Field(default=None, max_length=2048)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    processed_at: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True)  # type: ignore
+    )
+    review_status: str | None = Field(default=None, index=True, max_length=32)
+    review_comment: str | None = Field(default=None, max_length=4096)
+    reviewed_at: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True)  # type: ignore
+    )
+    owner_id: uuid.UUID = Field(
+        foreign_key="user.id", nullable=False, ondelete="CASCADE"
+    )
+    owner: User | None = Relationship(back_populates="documents")
+
+
+class DocumentMeta(SQLModel):
+    id: uuid.UUID
+    filename: str
+    original_filename: str
+    file_size: int
+    status: str
+    page_count: int
+    key_value_pairs: list[dict[str, Any]]
+    tables: list[dict[str, Any]]
+    bol_kv_fields: list[dict[str, Any]] | None = None
+    bol_line_items: list[dict[str, Any]] | None = None
+    error_message: str | None
+    created_at: datetime | None
+    processed_at: datetime | None
+    review_status: str | None = None
+    review_comment: str | None = None
+    reviewed_at: datetime | None = None
+
+
+class DocumentDetail(DocumentMeta):
+    page_images: list[str] = []
+
+
+class DocumentsPublic(SQLModel):
+    data: list[DocumentMeta]
+    count: int
+
+
+class ChatSession(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", ondelete="CASCADE")
+    document_id: uuid.UUID | None = Field(default=None, foreign_key="document.id", ondelete="SET NULL")
+    title: str | None = Field(default=None, max_length=255)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    messages: list["ChatMessage"] = Relationship(
+        back_populates="session", cascade_delete=True
+    )
+
+
+class ChatMessage(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    session_id: uuid.UUID = Field(foreign_key="chatsession.id", ondelete="CASCADE")
+    role: str = Field(max_length=32)
+    content: str
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    session: Optional["ChatSession"] = Relationship(back_populates="messages")
+
+
+class ChatSessionPublic(SQLModel):
+    id: uuid.UUID
+    document_id: uuid.UUID | None
+    title: str | None
+    created_at: datetime | None
+
+
+class ChatMessagePublic(SQLModel):
+    id: uuid.UUID
+    session_id: uuid.UUID
+    role: str
+    content: str
+    created_at: datetime | None
+
+
+class Message(SQLModel):
+    message: str
+
+
+class Token(SQLModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class TokenPayload(SQLModel):
+    sub: str | None = None
+
+
+class NewPassword(SQLModel):
+    token: str
+    new_password: str = Field(min_length=8, max_length=128)
