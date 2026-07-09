@@ -112,9 +112,11 @@ class Document(DocumentBase, table=True):
     reviewed_at: datetime | None = Field(
         default=None, sa_type=DateTime(timezone=True)  # type: ignore
     )
-    owner_id: uuid.UUID = Field(
-        foreign_key="user.id", nullable=False, ondelete="CASCADE"
-    )
+    # No DB-level ON DELETE CASCADE here: SQL Server forbids "multiple cascade
+    # paths" and a user already reaches `chatsession` via `chatsession.user_id`.
+    # Deleting a user's documents is handled by the ORM (`cascade_delete=True`
+    # on `User.documents`) plus an explicit bulk delete in the delete-user route.
+    owner_id: uuid.UUID = Field(foreign_key="user.id", nullable=False)
     owner: User | None = Relationship(back_populates="documents")
 
 
