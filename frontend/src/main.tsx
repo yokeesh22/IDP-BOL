@@ -10,9 +10,12 @@ import ReactDOM from "react-dom/client"
 import { ApiError, OpenAPI } from "./client"
 import { Toaster } from "./components/ui/sonner"
 import "./index.css"
+import { API_BASE } from "./lib/api"
 import { routeTree } from "./routeTree.gen"
 
-OpenAPI.BASE = import.meta.env.VITE_API_URL
+// Reuse the same resolved base URL as the axios client (with fallback) so the
+// generated client never ends up with `undefined` when VITE_API_URL is unset.
+OpenAPI.BASE = API_BASE
 OpenAPI.TOKEN = async () => {
   return localStorage.getItem("access_token") || ""
 }
