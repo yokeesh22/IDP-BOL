@@ -73,6 +73,8 @@ services:
       - UPLOAD_DIR=${UPLOAD_DIR}
       - PDF_RENDER_DPI=${PDF_RENDER_DPI}
       - PROCESSOR_CONCURRENCY=${PROCESSOR_CONCURRENCY}
+      - AZURE_STORAGE_CONTAINER_URL=${AZURE_STORAGE_CONTAINER_URL}
+      - AZURE_STORAGE_SAS_TOKEN=${AZURE_STORAGE_SAS_TOKEN}
     volumes:
       - app-uploads:/app/backend/uploads
     healthcheck:

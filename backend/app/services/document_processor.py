@@ -4,32 +4,34 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from sqlmodel import Session, select
 
 from app.core.config import settings
 from app.core.db import engine
+from app.core.storage import get_storage
 from app.models import Document, DocumentStatus
 
 logger = logging.getLogger(__name__)
 
 
-def convert_pdf_to_images(pdf_path: Path, doc_id: uuid.UUID) -> int:
+def convert_pdf_to_images(pdf_bytes: bytes, doc_id: uuid.UUID) -> int:
     import fitz  # PyMuPDF
 
-    images_dir = Path(settings.UPLOAD_DIR) / f"doc_{doc_id}_pages"
-    images_dir.mkdir(parents=True, exist_ok=True)
-
-    pdf_doc = fitz.open(str(pdf_path))
+    storage = get_storage()
+    pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     try:
         zoom = settings.PDF_RENDER_DPI / 72.0
         mat = fitz.Matrix(zoom, zoom)
         for page_num in range(len(pdf_doc)):
             page = pdf_doc[page_num]
             pix = page.get_pixmap(matrix=mat, alpha=False)
-            pix.save(str(images_dir / f"page_{page_num + 1}.png"))
+            storage.save_bytes(
+                f"doc_{doc_id}_pages/page_{page_num + 1}.png",
+                pix.tobytes("png"),
+                content_type="image/png",
+            )
         return len(pdf_doc)
     finally:
         pdf_doc.close()
@@ -48,7 +50,7 @@ def _extract_regions(field: Any) -> list[dict[str, Any]]:
     return regions
 
 
-def analyze_with_form_recognizer(pdf_path: Path) -> dict[str, Any]:
+def analyze_with_form_recognizer(pdf_bytes: bytes) -> dict[str, Any]:
     from azure.ai.formrecognizer import DocumentAnalysisClient
     from azure.core.credentials import AzureKeyCredential
 
@@ -63,8 +65,7 @@ def analyze_with_form_recognizer(pdf_path: Path) -> dict[str, Any]:
         credential=AzureKeyCredential(settings.FR_KEY),
     )
 
-    with pdf_path.open("rb") as f:
-        poller = client.begin_analyze_document(settings.FR_MODEL_ID, document=f)
+    poller = client.begin_analyze_document(settings.FR_MODEL_ID, document=pdf_bytes)
     result = poller.result()
 
     kv_pairs: list[dict[str, Any]] = []
@@ -119,23 +120,25 @@ def analyze_with_form_recognizer(pdf_path: Path) -> dict[str, Any]:
 
 
 def _process_document_blocking(doc_id: uuid.UUID) -> None:
-    pdf_path = Path(settings.UPLOAD_DIR) / ""
+    filename = ""
     with Session(engine) as session:
         doc = session.get(Document, doc_id)
         if not doc:
             return
-        pdf_path = Path(settings.UPLOAD_DIR) / doc.filename
+        filename = doc.filename
         doc.status = DocumentStatus.PROCESSING
         doc.error_message = None
         session.add(doc)
         session.commit()
 
     try:
-        if not pdf_path.exists():
-            raise FileNotFoundError(f"PDF missing on disk: {pdf_path}")
+        storage = get_storage()
+        if not storage.exists(filename):
+            raise FileNotFoundError(f"PDF missing from storage: {filename}")
 
-        page_count = convert_pdf_to_images(pdf_path, doc_id)
-        result = analyze_with_form_recognizer(pdf_path)
+        pdf_bytes = storage.read_bytes(filename)
+        page_count = convert_pdf_to_images(pdf_bytes, doc_id)
+        result = analyze_with_form_recognizer(pdf_bytes)
         page_count = max(page_count, result.get("page_count", 0))
 
         # Extract BOL fields of interest via LLM before marking as processed

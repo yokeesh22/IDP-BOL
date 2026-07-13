@@ -25,7 +25,8 @@ if settings.SENTRY_DSN and settings.ENVIRONMENT != "local":
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
+    if not settings.use_blob_storage:
+        Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
     # Initialize the SQLite schema and seed the superuser. Safe to run on every
     # startup: create_all is a no-op for existing tables and the superuser
     # insert is idempotent.
@@ -56,12 +57,14 @@ if settings.all_cors_origins:
         allow_headers=["*"],
     )
 
-# Serve uploaded PDFs and rendered page images statically
-Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
-app.mount(
-    "/uploads",
-    StaticFiles(directory=settings.UPLOAD_DIR),
-    name="uploads",
-)
+# Serve uploaded PDFs and rendered page images statically when using local
+# storage. With Azure Blob Storage, files are served directly from blob SAS URLs.
+if not settings.use_blob_storage:
+    Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
+    app.mount(
+        "/uploads",
+        StaticFiles(directory=settings.UPLOAD_DIR),
+        name="uploads",
+    )
 
 app.include_router(api_router, prefix=settings.API_V1_STR)

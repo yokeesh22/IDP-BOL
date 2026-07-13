@@ -111,6 +111,8 @@ services:
       - AZURE_SQL_PASSWORD=${AZURE_SQL_PASSWORD?Variable not set}
       - AZURE_SQL_PORT=${AZURE_SQL_PORT}
       - SENTRY_DSN=${SENTRY_DSN}
+      - AZURE_STORAGE_CONTAINER_URL=${AZURE_STORAGE_CONTAINER_URL}
+      - AZURE_STORAGE_SAS_TOKEN=${AZURE_STORAGE_SAS_TOKEN}
     build:
       context: .
       dockerfile: backend/Dockerfile

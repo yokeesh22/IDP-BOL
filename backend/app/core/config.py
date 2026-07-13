@@ -117,10 +117,23 @@ class Settings(BaseSettings):
     AZURE_OPENAI_DEPLOYMENT: str = "gpt-4o"
     AZURE_OPENAI_API_VERSION: str = "2024-08-01-preview"
 
-    # Local storage
+    # Local storage (used as a fallback when Azure Blob Storage is not configured)
     UPLOAD_DIR: str = "uploads"
     PDF_RENDER_DPI: int = 144  # 2x of 72 DPI; matches Form Recognizer inch coords
     PROCESSOR_CONCURRENCY: int = 3
+
+    # Azure Blob Storage. When both values are set, uploaded PDFs and rendered
+    # page images are stored in the blob container instead of the local disk.
+    # AZURE_STORAGE_CONTAINER_URL is the container URL without any query string,
+    # e.g. https://<account>.blob.core.windows.net/<container>
+    # AZURE_STORAGE_SAS_TOKEN is the SAS query string (with or without a leading "?").
+    AZURE_STORAGE_CONTAINER_URL: str = ""
+    AZURE_STORAGE_SAS_TOKEN: str = ""
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def use_blob_storage(self) -> bool:
+        return bool(self.AZURE_STORAGE_CONTAINER_URL and self.AZURE_STORAGE_SAS_TOKEN)
 
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
         if value == "changethis":

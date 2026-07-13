@@ -1,16 +1,15 @@
 import uuid
 import secrets
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlmodel import col, func, select
 
 from app.api.deps import CurrentUser, SessionDep
-from app.core.config import settings
+from app.core.storage import get_storage
 from app.models import (
     Document,
     DocumentDetail,
@@ -24,12 +23,6 @@ from app.models import (
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 
-def _upload_dir() -> Path:
-    p = Path(settings.UPLOAD_DIR)
-    p.mkdir(parents=True, exist_ok=True)
-    return p
-
-
 def _to_meta(doc: Document) -> DocumentMeta:
     return DocumentMeta.model_validate(doc, from_attributes=True)
 
@@ -37,8 +30,9 @@ def _to_meta(doc: Document) -> DocumentMeta:
 def _page_image_paths(doc: Document) -> list[str]:
     if doc.status != "processed" or doc.page_count <= 0:
         return []
+    storage = get_storage()
     return [
-        f"/uploads/doc_{doc.id}_pages/page_{i + 1}.png"
+        storage.url_for(f"doc_{doc.id}_pages/page_{i + 1}.png")
         for i in range(doc.page_count)
     ]
 
@@ -89,16 +83,19 @@ async def upload_document(
 
     suffix = ".pdf"
     stored_name = f"{uuid.uuid4().hex}_{secrets.token_hex(4)}{suffix}"
-    target = _upload_dir() / stored_name
 
+    chunks: list[bytes] = []
     size = 0
-    with target.open("wb") as out:
-        while True:
-            chunk = await file.read(1024 * 1024)
-            if not chunk:
-                break
-            out.write(chunk)
-            size += len(chunk)
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        size += len(chunk)
+
+    get_storage().save_bytes(
+        stored_name, b"".join(chunks), content_type="application/pdf"
+    )
 
     doc = Document(
         original_filename=file.filename or stored_name,
@@ -122,13 +119,9 @@ def delete_document(
     if not current_user.is_superuser and doc.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
 
-    pdf_path = _upload_dir() / doc.filename
-    pdf_path.unlink(missing_ok=True)
-    pages_dir = _upload_dir() / f"doc_{doc.id}_pages"
-    if pages_dir.exists():
-        for p in pages_dir.iterdir():
-            p.unlink(missing_ok=True)
-        pages_dir.rmdir()
+    storage = get_storage()
+    storage.delete(doc.filename)
+    storage.delete_prefix(f"doc_{doc.id}_pages/")
 
     session.delete(doc)
     session.commit()
@@ -269,15 +262,20 @@ async def get_bol_fields(
 @router.get("/{doc_id}/file")
 def download_pdf(
     session: SessionDep, current_user: CurrentUser, doc_id: uuid.UUID
-) -> FileResponse:
+) -> Response:
     doc = session.get(Document, doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     if not current_user.is_superuser and doc.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
-    path = _upload_dir() / doc.filename
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="File missing on disk")
-    return FileResponse(
-        path, media_type="application/pdf", filename=doc.original_filename
+    storage = get_storage()
+    if not storage.exists(doc.filename):
+        raise HTTPException(status_code=404, detail="File missing from storage")
+    data = storage.read_bytes(doc.filename)
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{doc.original_filename}"'
+        },
     )
