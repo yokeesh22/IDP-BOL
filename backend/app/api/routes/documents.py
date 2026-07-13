@@ -93,9 +93,18 @@ async def upload_document(
         chunks.append(chunk)
         size += len(chunk)
 
-    get_storage().save_bytes(
-        stored_name, b"".join(chunks), content_type="application/pdf"
-    )
+    try:
+        get_storage().save_bytes(
+            stored_name, b"".join(chunks), content_type="application/pdf"
+        )
+    except Exception as e:
+        # Surface storage failures (e.g. Azure Blob 403 AuthorizationFailure from
+        # a storage-account firewall) as a clean HTTP error so the client gets a
+        # meaningful message with CORS headers instead of a raw 500.
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to store the file in blob storage: {e}",
+        )
 
     doc = Document(
         original_filename=file.filename or stored_name,
