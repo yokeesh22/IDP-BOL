@@ -39,6 +39,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
+  API_BASE,
   type ExtractedTable,
   type KVPair,
   type ReviewStatus,
@@ -257,7 +258,7 @@ export function DocumentViewer({ docId }: { docId: string }) {
     try {
       const token = localStorage.getItem("access_token")
       const res = await fetch(
-        `${import.meta.env.VITE_API_URL || "http://localhost:8765"}/api/v1/documents/${doc.id}/file`,
+        `${API_BASE}/api/v1/documents/${doc.id}/file`,
         { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
       )
       if (!res.ok) throw new Error(`HTTP ${res.status}`)

@@ -12,7 +12,13 @@ WORKDIR /app/frontend
 RUN bun install
 
 COPY ./frontend /app/frontend
-ARG VITE_API_URL
+
+# Base URL the compiled frontend uses to reach the API.
+# Default is empty => relative paths (/api/...), served same-origin via nginx
+# reverse proxy. Override with --build-arg VITE_API_URL=https://... only if you
+# deploy the frontend and backend under separate origins.
+ARG VITE_API_URL=""
+ENV VITE_API_URL=$VITE_API_URL
 
 RUN bun run build
 

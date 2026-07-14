@@ -1,6 +1,12 @@
 import axios from "axios"
 
-export const API_BASE: string = (import.meta.env.VITE_API_URL as string) || "http://localhost:8765"
+// When VITE_API_URL is unset we default to a relative path ("") in production
+// builds so the frontend calls the API on the same origin (nginx proxies
+// /api to the backend). During local `bun run dev` we fall back to localhost.
+// Note: `??` (not `||`) so an explicitly empty VITE_API_URL stays relative.
+export const API_BASE: string =
+  (import.meta.env.VITE_API_URL as string | undefined) ??
+  (import.meta.env.PROD ? "" : "http://localhost:8765")
 export const API_PREFIX = "/api/v1"
 
 const api = axios.create({

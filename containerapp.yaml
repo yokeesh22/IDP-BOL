@@ -1,0 +1,116 @@
+# Azure Container App definition for IDP-BOL (frontend + backend in one app).
+# Apply with:  az containerapp create -g <RG> -n idp-bol --yaml containerapp.yaml
+#
+# Before applying, replace every REPLACE_* placeholder below.
+# Values marked "secret" come from your local .env — keep them here only long
+# enough to apply, or set them with `az containerapp secret set` instead.
+
+location: eastus2
+name: idp-bol
+type: Microsoft.App/containerApps
+properties:
+  # Get this with: az containerapp env show -g <RG> -n <ENVNAME> --query id -o tsv
+  managedEnvironmentId: REPLACE_MANAGED_ENVIRONMENT_ID
+
+  configuration:
+    activeRevisionsMode: Single
+    ingress:
+      external: true
+      targetPort: 80          # frontend (nginx) is the public entrypoint
+      transport: auto
+      allowInsecure: false
+      traffic:
+        - latestRevision: true
+          weight: 100
+    registries:
+      - server: REPLACE_ACR_NAME.azurecr.io
+        username: REPLACE_ACR_NAME
+        passwordSecretRef: acr-password
+    secrets:
+      - name: acr-password
+        value: REPLACE_ACR_ADMIN_PASSWORD   # az acr credential show -n <ACR> --query "passwords[0].value" -o tsv
+      - name: secret-key
+        value: REPLACE_SECRET_KEY            # python -c "import secrets; print(secrets.token_urlsafe(32))"
+      - name: superuser-pw
+        value: REPLACE_SUPERUSER_PASSWORD
+      - name: sql-pw
+        value: REPLACE_SQL_PASSWORD
+      - name: fr-key
+        value: REPLACE_FR_KEY
+      - name: openai-key
+        value: REPLACE_OPENAI_KEY
+      - name: blob-sas
+        value: REPLACE_BLOB_SAS_TOKEN
+
+  template:
+    containers:
+      # ── Backend: FastAPI (not exposed; reached by nginx via localhost:8000) ──
+      - name: backend
+        image: REPLACE_ACR_NAME.azurecr.io/idp-bol-backend:v1
+        resources:
+          cpu: 1.0
+          memory: 2.0Gi
+        env:
+          - name: ENVIRONMENT
+            value: production
+          - name: PROJECT_NAME
+            value: IDP-BOL
+          # Set to your app URL after the first deploy (see guide Step 5).
+          - name: FRONTEND_HOST
+            value: REPLACE_APP_URL            # e.g. https://idp-bol.<random>.eastus2.azurecontainerapps.io
+          - name: SECRET_KEY
+            secretRef: secret-key
+          - name: FIRST_SUPERUSER
+            value: admin@ineffa.in
+          - name: FIRST_SUPERUSER_PASSWORD
+            secretRef: superuser-pw
+          # Azure SQL — do NOT set AZURE_SQL_ODBC_DRIVER (defaults to Driver 18).
+          - name: AZURE_SQL_SERVER
+            value: ste-gpsql-nonprod-eastus2.database.windows.net
+          - name: AZURE_SQL_DATABASE
+            value: AIBillofLading
+          - name: AZURE_SQL_USER
+            value: AIAppLogin
+          - name: AZURE_SQL_PASSWORD
+            secretRef: sql-pw
+          - name: AZURE_SQL_PORT
+            value: "1433"
+          # Azure Form Recognizer
+          - name: FR_ENDPOINT
+            value: https://formrecog080298.cognitiveservices.azure.com/
+          - name: FR_KEY
+            secretRef: fr-key
+          - name: FR_MODEL_ID
+            value: prebuilt-document
+          # Azure OpenAI
+          - name: AZURE_OPENAI_ENDPOINT
+            value: https://steris-aipoc-openai-eastus2.cognitiveservices.azure.com/
+          - name: AZURE_OPENAI_API_KEY
+            secretRef: openai-key
+          - name: AZURE_OPENAI_DEPLOYMENT
+            value: gpt-5.2
+          - name: AZURE_OPENAI_API_VERSION
+            value: 2024-12-01-preview
+          # Azure Blob Storage (uploads/rendered pages; keeps disk stateless)
+          - name: AZURE_STORAGE_CONTAINER_URL
+            value: https://azureaipocste001.blob.core.windows.net/bolupload
+          - name: AZURE_STORAGE_SAS_TOKEN
+            secretRef: blob-sas
+          # Document processing
+          - name: UPLOAD_DIR
+            value: uploads
+          - name: PDF_RENDER_DPI
+            value: "144"
+          - name: PROCESSOR_CONCURRENCY
+            value: "3"
+
+      # ── Frontend: nginx serving the SPA + proxying /api to localhost:8000 ──
+      - name: frontend
+        image: REPLACE_ACR_NAME.azurecr.io/idp-bol-frontend:v1
+        resources:
+          cpu: 0.5
+          memory: 1.0Gi
+
+    scale:
+      minReplicas: 1
+      maxReplicas: 1

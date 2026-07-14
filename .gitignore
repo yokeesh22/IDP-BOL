@@ -29,3 +29,6 @@ backend/app.db
 # Uploaded user files (generated at runtime)
 backend/uploads/
 README.md
+
+# Deployment notes (may contain environment-specific details)
+DEPLOYMENT.md
