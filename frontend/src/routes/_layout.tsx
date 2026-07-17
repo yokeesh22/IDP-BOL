@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, redirect, useLocation } from "@tanstack/react-
 
 import { ChatWidget } from "@/components/Chat/ChatWidget"
 import { TopAppBar } from "@/components/Common/TopAppBar"
-import { isLoggedIn } from "@/hooks/useAuth"
+import useAuth, { isLoggedIn } from "@/hooks/useAuth"
 
 export const Route = createFileRoute("/_layout")({
   component: Layout,
@@ -17,6 +17,7 @@ export const Route = createFileRoute("/_layout")({
 
 function Layout() {
   const location = useLocation()
+  const { user } = useAuth()
   // Document reviewer screen owns its own appbar (with breadcrumb) and uses
   // the full viewport. Skip rendering the standard appbar/page chrome there.
   const isReviewer = /^\/documents\/[^/]+$/.test(location.pathname)
@@ -31,7 +32,7 @@ function Layout() {
       <main className="flex-1">
         <Outlet />
       </main>
-      <ChatWidget />
+      {user?.is_superuser && <ChatWidget />}
     </div>
   )
 }
