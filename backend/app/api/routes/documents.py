@@ -8,7 +8,8 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlmodel import col, func, select
 
-from app.api.deps import CurrentUser, SessionDep
+from app.api.deps import CurrentUser, SessionDep, get_user_from_token
+from app.core.config import settings
 from app.core.storage import get_storage
 from app.models import (
     Document,
@@ -30,9 +31,11 @@ def _to_meta(doc: Document) -> DocumentMeta:
 def _page_image_paths(doc: Document) -> list[str]:
     if doc.status != "processed" or doc.page_count <= 0:
         return []
-    storage = get_storage()
+    # Serve page images through the backend (see GET /{doc_id}/pages/{page_no})
+    # rather than as direct blob URLs, so the storage account can stay private
+    # and clients outside the VNet can still load the images.
     return [
-        storage.url_for(f"doc_{doc.id}_pages/page_{i + 1}.png")
+        f"{settings.API_V1_STR}/documents/{doc.id}/pages/{i + 1}"
         for i in range(doc.page_count)
     ]
 
@@ -287,4 +290,36 @@ def download_pdf(
         headers={
             "Content-Disposition": f'inline; filename="{doc.original_filename}"'
         },
+    )
+
+
+@router.get("/{doc_id}/pages/{page_no}")
+def get_page_image(
+    session: SessionDep,
+    doc_id: uuid.UUID,
+    page_no: int,
+    token: str,
+) -> Response:
+    # Authenticated via a query-param token: this URL is loaded from an <img>
+    # tag, which cannot send an Authorization header.
+    current_user = get_user_from_token(session, token)
+    doc = session.get(Document, doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not current_user.is_superuser and doc.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    if page_no < 1 or page_no > doc.page_count:
+        raise HTTPException(status_code=404, detail="Page not found")
+
+    name = f"doc_{doc.id}_pages/page_{page_no}.png"
+    storage = get_storage()
+    if not storage.exists(name):
+        raise HTTPException(status_code=404, detail="Page image missing from storage")
+    data = storage.read_bytes(name)
+    return Response(
+        content=data,
+        media_type="image/png",
+        # Rendered page images never change once produced, so let the browser
+        # cache them and avoid re-fetching on every page turn.
+        headers={"Cache-Control": "private, max-age=31536000, immutable"},
     )

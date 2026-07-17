@@ -309,6 +309,11 @@ export function DocumentViewer({ docId }: { docId: string }) {
   }
 
   const currentImage = pageImages[currentPage - 1]
+  // Page images are served by the backend and require auth. Since an <img> tag
+  // can't send an Authorization header, pass the token as a query param.
+  const currentImageSrc = currentImage
+    ? `${getStaticUrl(currentImage)}?token=${localStorage.getItem("access_token") ?? ""}`
+    : ""
 
   return (
     <Shell>
@@ -471,7 +476,7 @@ export function DocumentViewer({ docId }: { docId: string }) {
                     >
                       <img
                         ref={imageRef}
-                        src={getStaticUrl(currentImage)}
+                        src={currentImageSrc}
                         alt={`Page ${currentPage}`}
                         className="block h-auto select-none bg-white"
                         style={renderedWidth ? { width: `${renderedWidth}px`, maxWidth: "none" } : undefined}
