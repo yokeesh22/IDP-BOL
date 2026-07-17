@@ -1,7 +1,10 @@
+import base64
+import binascii
+import json
 from datetime import timedelta
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordRequestForm
 
@@ -34,6 +37,88 @@ def login_access_token(
         raise HTTPException(status_code=400, detail="Incorrect email or password")
     elif not user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    return Token(
+        access_token=security.create_access_token(
+            user.id, expires_delta=access_token_expires
+        )
+    )
+
+
+def _sso_email_from_headers(request: Request) -> str | None:
+    """Extract the signed-in user's email from Azure Easy Auth headers.
+
+    Azure Container Apps' built-in authentication injects the identity of the
+    signed-in user into request headers on every request that reaches the
+    container. External clients cannot set these headers (the platform strips
+    them at the ingress), so they are safe to trust here. The backend is not
+    publicly reachable either — nginx is the only public container and proxies
+    to it over localhost — so these headers always originate from the platform.
+
+    We prefer the simple ``X-MS-CLIENT-PRINCIPAL-NAME`` header (the UPN/email),
+    and fall back to decoding the base64 JSON ``X-MS-CLIENT-PRINCIPAL`` header
+    and searching its claims.
+    """
+    name = request.headers.get("X-MS-CLIENT-PRINCIPAL-NAME")
+    if name and name.strip():
+        return name.strip().lower()
+
+    encoded = request.headers.get("X-MS-CLIENT-PRINCIPAL")
+    if not encoded:
+        return None
+    try:
+        decoded = base64.b64decode(encoded).decode("utf-8")
+        principal = json.loads(decoded)
+    except (binascii.Error, ValueError, UnicodeDecodeError):
+        return None
+
+    claims = principal.get("claims") if isinstance(principal, dict) else None
+    if not isinstance(claims, list):
+        return None
+    by_type: dict[str, str] = {}
+    for claim in claims:
+        if isinstance(claim, dict) and claim.get("typ") and claim.get("val"):
+            by_type.setdefault(str(claim["typ"]), str(claim["val"]))
+
+    for key in (
+        "preferred_username",
+        "email",
+        "emails",
+        "upn",
+        "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress",
+        "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name",
+    ):
+        val = by_type.get(key)
+        if val and val.strip():
+            return val.strip().lower()
+    return None
+
+
+@router.post("/login/sso")
+def login_sso(request: Request, session: SessionDep) -> Token:
+    """Exchange an Azure SSO (Easy Auth) session for an app access token.
+
+    The user has already been authenticated by the Container Apps auth layer;
+    we read their email from the injected headers and issue our own JWT so the
+    rest of the app (which is JWT-based) works unchanged.
+
+    Distinct status codes let the frontend react correctly:
+      * 401 — no SSO identity present (user isn't signed in with Microsoft yet).
+      * 403 — signed in with Microsoft, but no matching/active app account
+              (accounts must be created by an admin first — no auto-provision).
+    """
+    email = _sso_email_from_headers(request)
+    if not email:
+        raise HTTPException(status_code=401, detail="No SSO identity present")
+
+    user = crud.get_user_by_email(session=session, email=email)
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=403,
+            detail="This account is not authorized for this application. "
+            "Please contact an administrator.",
+        )
+
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     return Token(
         access_token=security.create_access_token(

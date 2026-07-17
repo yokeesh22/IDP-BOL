@@ -8,6 +8,7 @@ import {
   type UserRegister,
   UsersService,
 } from "@/client"
+import { ssoLogout } from "@/lib/sso"
 import { handleError } from "@/utils"
 import useCustomToast from "./useCustomToast"
 
@@ -54,7 +55,15 @@ const useAuth = () => {
   })
 
   const logout = () => {
+    const wasSso = localStorage.getItem("sso_login") === "true"
     localStorage.removeItem("access_token")
+    localStorage.removeItem("sso_login")
+    if (wasSso) {
+      // Also end the Azure SSO session at the platform level; otherwise the
+      // Container App would silently sign the user back in on the next request.
+      ssoLogout()
+      return
+    }
     navigate({ to: "/login" })
   }
 

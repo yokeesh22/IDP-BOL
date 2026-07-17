@@ -4,8 +4,9 @@ import {
   Link as RouterLink,
   redirect,
 } from "@tanstack/react-router"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useForm } from "react-hook-form"
+import { toast } from "sonner"
 import { z } from "zod"
 
 import type { Body_login_login_access_token as AccessToken } from "@/client"
@@ -18,6 +19,7 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import useAuth, { isLoggedIn } from "@/hooks/useAuth"
+import { startSsoLogin, trySsoLogin } from "@/lib/sso"
 
 const formSchema = z.object({
   username: z.email(),
@@ -35,6 +37,17 @@ export const Route = createFileRoute("/login")({
     if (isLoggedIn()) {
       throw redirect({ to: "/" })
     }
+    // If the user already has an Azure SSO (Easy Auth) session, silently
+    // exchange it for an app token and skip the password form entirely.
+    const result = await trySsoLogin()
+    if (result === "ok") {
+      throw redirect({ to: "/" })
+    }
+    if (result === "forbidden") {
+      // Signed in with Microsoft, but not provisioned in this app. Remember so
+      // the component can show a clear message instead of a silent failure.
+      sessionStorage.setItem("sso_denied", "1")
+    }
   },
 })
 
@@ -47,11 +60,40 @@ const TEXT2 = "#4a5a6e"
 const TEXT3 = "#8a9aae"
 const ERROR = "#dc2626"
 const ERROR_BG = "#fef2f2"
+const NOT_AUTHORIZED_DESC =
+  "Your Microsoft account isn't authorized for this app. Please contact an administrator."
 
 function Login() {
   const { loginMutation } = useAuth()
   const [showPwd, setShowPwd] = useState(false)
   const [btnHover, setBtnHover] = useState(false)
+  const [ssoBusy, setSsoBusy] = useState(false)
+
+  useEffect(() => {
+    // beforeLoad sets this one-shot flag when the signed-in Microsoft account
+    // has no authorized app account; surface it as an amber warning toast.
+    if (sessionStorage.getItem("sso_denied") === "1") {
+      sessionStorage.removeItem("sso_denied")
+      toast.warning("Not authorized", { description: NOT_AUTHORIZED_DESC })
+    }
+  }, [])
+
+  const onSso = async () => {
+    if (ssoBusy) return
+    setSsoBusy(true)
+    const result = await trySsoLogin()
+    if (result === "ok") {
+      window.location.href = "/"
+      return
+    }
+    if (result === "forbidden") {
+      toast.warning("Not authorized", { description: NOT_AUTHORIZED_DESC })
+      setSsoBusy(false)
+      return
+    }
+    // No Microsoft session yet (or a transient error) — start the SSO login.
+    startSsoLogin()
+  }
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -292,15 +334,26 @@ function Login() {
             )}
           </button>
 
-          {/* Create account */}
+          {/* Sign in with SSO */}
           <div style={{ marginTop: 20, textAlign: "center" }}>
-            <span style={{ fontSize: 13, color: TEXT3 }}>Don't have an account?{" "}</span>
-            <RouterLink
-              to="/signup"
-              style={{ fontSize: 13, color: PRIMARY, fontWeight: 500, textDecoration: "none" }}
+            <button
+              type="button"
+              onClick={onSso}
+              disabled={ssoBusy}
+              style={{
+                background: "none",
+                border: "none",
+                padding: 0,
+                fontFamily: "inherit",
+                fontSize: 13,
+                fontWeight: 500,
+                color: PRIMARY,
+                cursor: ssoBusy ? "not-allowed" : "pointer",
+                opacity: ssoBusy ? 0.7 : 1,
+              }}
             >
-              Create one
-            </RouterLink>
+              {ssoBusy ? "Signing in…" : "Sign in with SSO"}
+            </button>
           </div>
 
           <style>{`
