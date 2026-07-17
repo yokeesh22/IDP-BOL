@@ -206,6 +206,38 @@ export async function fetchBolFields(docId: string): Promise<BolFieldsResponse> 
   return data
 }
 
+// ── Metering (superuser only) ─────────────────────────────────────────────────
+
+export interface MeteringRates {
+  currency: string
+  as_of: string
+  doc_intelligence_per_1k_pages: number
+  ai_input_per_1m_tokens: number
+  ai_output_per_1m_tokens: number
+}
+
+export interface MeteringRecord {
+  date: string | null
+  kind: "document" | "chat"
+  label: string
+  pages: number
+  input_tokens: number
+  output_tokens: number
+  di_cost: number
+  ai_cost: number
+  cost: number
+}
+
+export interface MeteringSummary {
+  rates: MeteringRates
+  records: MeteringRecord[]
+}
+
+export async function fetchMeteringSummary(): Promise<MeteringSummary> {
+  const { data } = await api.get<MeteringSummary>("/metering/summary")
+  return data
+}
+
 export function getStaticUrl(path: string): string {
   if (!path) return ""
   if (path.startsWith("http")) return path

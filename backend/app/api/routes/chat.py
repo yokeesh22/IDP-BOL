@@ -120,13 +120,21 @@ async def send_message(
 
     try:
         if chat_session.document_id:
-            response_text = await invoke_document_chat(str(chat_session.document_id), lc_messages)
+            response_text, usage = await invoke_document_chat(
+                str(chat_session.document_id), lc_messages
+            )
         else:
-            response_text = await invoke_chat(lc_messages)
+            response_text, usage = await invoke_chat(lc_messages)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    assistant_msg = ChatMessage(session_id=session_id, role="assistant", content=response_text)
+    assistant_msg = ChatMessage(
+        session_id=session_id,
+        role="assistant",
+        content=response_text,
+        ai_input_tokens=usage[0],
+        ai_output_tokens=usage[1],
+    )
     db.add(assistant_msg)
 
     if not chat_session.title:

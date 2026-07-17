@@ -1,5 +1,5 @@
 import { Link, useLocation } from "@tanstack/react-router"
-import { Bell, FileText, LayoutDashboard, LogOut, Shield, User as UserIcon } from "lucide-react"
+import { Bell, FileText, Gauge, LayoutDashboard, LogOut, Shield, User as UserIcon } from "lucide-react"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 
 import useAuth from "@/hooks/useAuth"
@@ -35,6 +35,7 @@ export function TopAppBar({ center, hideNav }: TopAppBarProps) {
     { title: "Documents", path: "/documents", icon: FileText },
   ]
   if (user?.is_superuser) {
+    navItems.push({ title: "Metering", path: "/metering", icon: Gauge })
     navItems.push({ title: "Admin", path: "/admin", icon: Shield })
   }
 

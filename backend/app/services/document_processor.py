@@ -169,6 +169,9 @@ def _process_document_blocking(doc_id: uuid.UUID) -> None:
             doc.tables = result["tables"]
             doc.bol_kv_fields = bol_result["kv_fields"] if bol_result else None
             doc.bol_line_items = bol_result["line_items"] if bol_result else None
+            if bol_result and bol_result.get("usage"):
+                doc.ai_input_tokens = bol_result["usage"].get("input_tokens", 0)
+                doc.ai_output_tokens = bol_result["usage"].get("output_tokens", 0)
             doc.processed_at = datetime.now(timezone.utc)
             doc.error_message = None
             session.add(doc)

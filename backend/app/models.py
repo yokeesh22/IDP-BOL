@@ -100,6 +100,10 @@ class Document(DocumentBase, table=True):
         default=None, sa_column=Column(JSON, nullable=True)
     )
     error_message: str | None = Field(default=None, max_length=2048)
+    # AI token usage for the document-extraction LLM passes. Null = not tracked
+    # (e.g. document processed before metering existed, or extraction failed).
+    ai_input_tokens: int | None = Field(default=None)
+    ai_output_tokens: int | None = Field(default=None)
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
@@ -167,6 +171,9 @@ class ChatMessage(SQLModel, table=True):
     session_id: uuid.UUID = Field(foreign_key="chatsession.id", ondelete="CASCADE")
     role: str = Field(max_length=32)
     content: str
+    # AI token usage for assistant replies (null for user messages / untracked).
+    ai_input_tokens: int | None = Field(default=None)
+    ai_output_tokens: int | None = Field(default=None)
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore

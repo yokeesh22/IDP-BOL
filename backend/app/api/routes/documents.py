@@ -261,6 +261,9 @@ async def get_bol_fields(
         )
         doc.bol_kv_fields = result["kv_fields"]
         doc.bol_line_items = result["line_items"]
+        if result.get("usage"):
+            doc.ai_input_tokens = result["usage"].get("input_tokens", 0)
+            doc.ai_output_tokens = result["usage"].get("output_tokens", 0)
         session.add(doc)
         session.commit()
         return BolFieldsResponse(

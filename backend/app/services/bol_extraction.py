@@ -7,6 +7,8 @@ import logging
 import re
 from typing import Any
 
+from app.services.usage import usage_from_message
+
 logger = logging.getLogger(__name__)
 
 BOL_KV_FIELDS = [
@@ -228,8 +230,11 @@ def _judge_kv_fields(
     tables_text: str,
     full_text: str,
     llm: Any,
-) -> list[dict[str, Any]]:
-    """Run the judge pass on kv_fields only. Returns corrected list."""
+) -> tuple[list[dict[str, Any]], tuple[int, int]]:
+    """Run the judge pass on kv_fields only.
+
+    Returns the corrected list and the (input_tokens, output_tokens) used.
+    """
     draft_summary = "\n".join(
         f"  {f['label']}: {f['value'] if f.get('found') else '(not found)'}"
         for f in draft_fields
@@ -241,13 +246,14 @@ def _judge_kv_fields(
         tables=tables_text,
     )
     raw = llm.invoke(prompt)
+    usage = usage_from_message(raw)
     result = _parse_json(raw.content if isinstance(raw.content, str) else str(raw.content))
     corrected = [f["label"] for f in result.get("kv_fields", []) if f.get("judge_corrected")]
     if corrected:
         logger.info("BOL judge corrected fields: %s", ", ".join(corrected))
     else:
         logger.info("BOL judge: all fields verified, no corrections needed")
-    return result.get("kv_fields", draft_fields)
+    return result.get("kv_fields", draft_fields), usage
 
 
 _PROCESS_MODE_ALIASES: list[tuple[str, str]] = [
@@ -365,7 +371,8 @@ def extract_bol_fields(
     Returns:
         {
             "kv_fields": [{"label":..., "value":..., "found":..., "kv_pair_index":...}, ...],
-            "line_items": [{col: value, ...}, ...]
+            "line_items": [{col: value, ...}, ...],
+            "usage": {"input_tokens": int, "output_tokens": int}
         }
     """
     from langchain_openai import AzureChatOpenAI
@@ -400,10 +407,16 @@ def extract_bol_fields(
     tables_text = "\n\n".join(tables_text_parts) or "  (none)"
     clean_full_text = full_text.strip() or "  (none)"
 
+    total_input_tokens = 0
+    total_output_tokens = 0
+
     # ── Pass 1: Extract all fields + line items ──────────────────────────────
     logger.info("BOL extraction: pass 1 — extractor")
     extract_prompt = _build_prompt(kv_pairs, tables, full_text)
     raw1 = llm.invoke(extract_prompt)
+    in_tok, out_tok = usage_from_message(raw1)
+    total_input_tokens += in_tok
+    total_output_tokens += out_tok
     draft = _parse_json(raw1.content if isinstance(raw1.content, str) else str(raw1.content))
     logger.info(
         "BOL extractor: %d/%d key fields found, %d line items",
@@ -414,13 +427,15 @@ def extract_bol_fields(
 
     # ── Pass 2: Judge — fields of interest only, line items kept as-is ───────
     logger.info("BOL extraction: pass 2 — judge (fields of interest only)")
-    judged_fields = _judge_kv_fields(
+    judged_fields, judge_usage = _judge_kv_fields(
         draft.get("kv_fields", []),
         kvp_text,
         tables_text,
         clean_full_text,
         llm,
     )
+    total_input_tokens += judge_usage[0]
+    total_output_tokens += judge_usage[1]
 
     # ── Pass 3: Deterministic post-processing ───────────────────────────────
     judged_fields = _post_process_fields(judged_fields)
@@ -442,4 +457,8 @@ def extract_bol_fields(
     return {
         "kv_fields": kv_fields,
         "line_items": draft.get("line_items", []),
+        "usage": {
+            "input_tokens": total_input_tokens,
+            "output_tokens": total_output_tokens,
+        },
     }

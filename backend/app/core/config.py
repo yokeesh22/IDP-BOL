@@ -117,6 +117,18 @@ class Settings(BaseSettings):
     AZURE_OPENAI_DEPLOYMENT: str = "gpt-4o"
     AZURE_OPENAI_API_VERSION: str = "2024-08-01-preview"
 
+    # ── Metering rate card ────────────────────────────────────────────────────
+    # Unit prices used to estimate usage cost on the (superuser) metering page.
+    # Defaults are Azure list prices (USD, global pay-as-you-go) as of Jul 2026:
+    #   • Document Intelligence prebuilt models: $10.00 / 1,000 pages
+    #   • AI (document extraction + chat): $1.75 / 1M input, $14.00 / 1M output
+    # Override via env to match your negotiated/committed rates.
+    METERING_CURRENCY: str = "USD"
+    METERING_RATES_AS_OF: str = "Jul 2026"
+    RATE_DOC_INTELLIGENCE_PER_1K_PAGES: float = 10.0
+    RATE_AI_INPUT_PER_1M_TOKENS: float = 1.75
+    RATE_AI_OUTPUT_PER_1M_TOKENS: float = 14.0
+
     # Local storage (used as a fallback when Azure Blob Storage is not configured)
     UPLOAD_DIR: str = "uploads"
     PDF_RENDER_DPI: int = 144  # 2x of 72 DPI; matches Form Recognizer inch coords

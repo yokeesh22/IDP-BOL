@@ -14,6 +14,7 @@ from typing_extensions import TypedDict
 
 from app.core.config import settings
 from app.core.db import engine
+from app.services.usage import sum_usage
 
 SYSTEM_PROMPT = """You are BOL Agent — an assistant for the Document Intelligence platform.
 Your job is to answer questions about BOL documents and data using the tools provided.
@@ -305,11 +306,18 @@ def _get_graph() -> Any:
     return _graph
 
 
-async def invoke_chat(messages: list[BaseMessage]) -> str:
+async def invoke_chat(messages: list[BaseMessage]) -> tuple[str, tuple[int, int]]:
+    """Return (reply_text, (input_tokens, output_tokens)).
+
+    Token usage is summed across every model turn in the agent run (the initial
+    call plus any tool-calling follow-ups).
+    """
     graph = _get_graph()
     result = await graph.ainvoke({"messages": messages})
-    last = result["messages"][-1]
-    return last.content if isinstance(last.content, str) else str(last.content)
+    all_messages = result["messages"]
+    last = all_messages[-1]
+    text = last.content if isinstance(last.content, str) else str(last.content)
+    return text, sum_usage(all_messages)
 
 
 def _fetch_document_context(document_id: str) -> dict[str, Any]:
@@ -450,9 +458,14 @@ def _get_document_graph() -> Any:
     return _doc_graph
 
 
-async def invoke_document_chat(document_id: str, messages: list[BaseMessage]) -> str:
+async def invoke_document_chat(
+    document_id: str, messages: list[BaseMessage]
+) -> tuple[str, tuple[int, int]]:
+    """Return (reply_text, (input_tokens, output_tokens)) for a document chat."""
     graph = _get_document_graph()
     fresh_prompt = _build_document_system_prompt(document_id)
     result = await graph.ainvoke({"messages": messages, "system_prompt": fresh_prompt})
-    last = result["messages"][-1]
-    return last.content if isinstance(last.content, str) else str(last.content)
+    all_messages = result["messages"]
+    last = all_messages[-1]
+    text = last.content if isinstance(last.content, str) else str(last.content)
+    return text, sum_usage(all_messages)
