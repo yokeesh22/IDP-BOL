@@ -340,6 +340,12 @@ function Login() {
               type="button"
               onClick={onSso}
               disabled={ssoBusy}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.textDecoration = "underline"
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.textDecoration = "none"
+              }}
               style={{
                 background: "none",
                 border: "none",
@@ -348,6 +354,7 @@ function Login() {
                 fontSize: 13,
                 fontWeight: 500,
                 color: PRIMARY,
+                textDecoration: "none",
                 cursor: ssoBusy ? "not-allowed" : "pointer",
                 opacity: ssoBusy ? 0.7 : 1,
               }}
