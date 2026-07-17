@@ -6,31 +6,7 @@ services:
       dockerfile: backend/Dockerfile
     command: bash scripts/prestart.sh
     env_file:
-      - .env
-    environment:
-      - DOMAIN=${DOMAIN}
-      - FRONTEND_HOST=${FRONTEND_HOST?Variable not set}
-      - ENVIRONMENT=${ENVIRONMENT}
-      - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS}
-      - SECRET_KEY=${SECRET_KEY?Variable not set}
-      - FIRST_SUPERUSER=${FIRST_SUPERUSER?Variable not set}
-      - FIRST_SUPERUSER_PASSWORD=${FIRST_SUPERUSER_PASSWORD?Variable not set}
-      - SMTP_HOST=${SMTP_HOST}
-      - SMTP_USER=${SMTP_USER}
-      - SMTP_PASSWORD=${SMTP_PASSWORD}
-      - EMAILS_FROM_EMAIL=${EMAILS_FROM_EMAIL}
-      - AZURE_SQL_SERVER=${AZURE_SQL_SERVER?Variable not set}
-      - AZURE_SQL_DATABASE=${AZURE_SQL_DATABASE?Variable not set}
-      - AZURE_SQL_USER=${AZURE_SQL_USER?Variable not set}
-      - AZURE_SQL_PASSWORD=${AZURE_SQL_PASSWORD?Variable not set}
-      - AZURE_SQL_PORT=${AZURE_SQL_PORT}
-      - SENTRY_DSN=${SENTRY_DSN}
-      - FR_ENDPOINT=${FR_ENDPOINT}
-      - FR_KEY=${FR_KEY}
-      - FR_MODEL_ID=${FR_MODEL_ID}
-      - UPLOAD_DIR=${UPLOAD_DIR}
-      - PDF_RENDER_DPI=${PDF_RENDER_DPI}
-      - PROCESSOR_CONCURRENCY=${PROCESSOR_CONCURRENCY}
+      - ./backend/.env
 
   backend:
     restart: "no"
@@ -48,33 +24,7 @@ services:
       - --reload
       - "app/main.py"
     env_file:
-      - .env
-    environment:
-      - DOMAIN=${DOMAIN}
-      - FRONTEND_HOST=${FRONTEND_HOST?Variable not set}
-      - ENVIRONMENT=${ENVIRONMENT}
-      - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS}
-      - SECRET_KEY=${SECRET_KEY?Variable not set}
-      - FIRST_SUPERUSER=${FIRST_SUPERUSER?Variable not set}
-      - FIRST_SUPERUSER_PASSWORD=${FIRST_SUPERUSER_PASSWORD?Variable not set}
-      - SMTP_HOST=${SMTP_HOST}
-      - SMTP_USER=${SMTP_USER}
-      - SMTP_PASSWORD=${SMTP_PASSWORD}
-      - EMAILS_FROM_EMAIL=${EMAILS_FROM_EMAIL}
-      - AZURE_SQL_SERVER=${AZURE_SQL_SERVER?Variable not set}
-      - AZURE_SQL_DATABASE=${AZURE_SQL_DATABASE?Variable not set}
-      - AZURE_SQL_USER=${AZURE_SQL_USER?Variable not set}
-      - AZURE_SQL_PASSWORD=${AZURE_SQL_PASSWORD?Variable not set}
-      - AZURE_SQL_PORT=${AZURE_SQL_PORT}
-      - SENTRY_DSN=${SENTRY_DSN}
-      - FR_ENDPOINT=${FR_ENDPOINT}
-      - FR_KEY=${FR_KEY}
-      - FR_MODEL_ID=${FR_MODEL_ID}
-      - UPLOAD_DIR=${UPLOAD_DIR}
-      - PDF_RENDER_DPI=${PDF_RENDER_DPI}
-      - PROCESSOR_CONCURRENCY=${PROCESSOR_CONCURRENCY}
-      - AZURE_STORAGE_CONTAINER_URL=${AZURE_STORAGE_CONTAINER_URL}
-      - AZURE_STORAGE_SAS_TOKEN=${AZURE_STORAGE_SAS_TOKEN}
+      - ./backend/.env
     volumes:
       - app-uploads:/app/backend/uploads
     healthcheck:

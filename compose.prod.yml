@@ -1,7 +1,10 @@
 # Production compose file.
-# Usage: docker compose -f compose.prod.yml up -d
+# Usage: docker compose --env-file ./backend/.env -f compose.prod.yml up -d
 #
-# Requires these additional env vars (add to .env or export):
+# App configuration/secrets are read from ./backend/.env (via env_file below).
+# The deploy-time variables interpolated in this file (${...}) must additionally
+# be present in the environment used for interpolation — either exported in the
+# shell or supplied via `docker compose --env-file <file>`:
 #   DOMAIN=yourdomain.com
 #   STACK_NAME=your-stack-name
 #   EMAIL=admin@yourdomain.com          (Let's Encrypt notifications)
@@ -62,25 +65,7 @@ services:
       - default
     command: bash scripts/prestart.sh
     env_file:
-      - .env
-    environment:
-      - DOMAIN=${DOMAIN}
-      - FRONTEND_HOST=${FRONTEND_HOST?Variable not set}
-      - ENVIRONMENT=${ENVIRONMENT}
-      - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS}
-      - SECRET_KEY=${SECRET_KEY?Variable not set}
-      - FIRST_SUPERUSER=${FIRST_SUPERUSER?Variable not set}
-      - FIRST_SUPERUSER_PASSWORD=${FIRST_SUPERUSER_PASSWORD?Variable not set}
-      - SMTP_HOST=${SMTP_HOST}
-      - SMTP_USER=${SMTP_USER}
-      - SMTP_PASSWORD=${SMTP_PASSWORD}
-      - EMAILS_FROM_EMAIL=${EMAILS_FROM_EMAIL}
-      - AZURE_SQL_SERVER=${AZURE_SQL_SERVER?Variable not set}
-      - AZURE_SQL_DATABASE=${AZURE_SQL_DATABASE?Variable not set}
-      - AZURE_SQL_USER=${AZURE_SQL_USER?Variable not set}
-      - AZURE_SQL_PASSWORD=${AZURE_SQL_PASSWORD?Variable not set}
-      - AZURE_SQL_PORT=${AZURE_SQL_PORT}
-      - SENTRY_DSN=${SENTRY_DSN}
+      - ./backend/.env
 
   backend:
     image: '${DOCKER_IMAGE_BACKEND?Variable not set}:${TAG-latest}'
@@ -92,27 +77,7 @@ services:
       prestart:
         condition: service_completed_successfully
     env_file:
-      - .env
-    environment:
-      - DOMAIN=${DOMAIN}
-      - FRONTEND_HOST=${FRONTEND_HOST?Variable not set}
-      - ENVIRONMENT=${ENVIRONMENT}
-      - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS}
-      - SECRET_KEY=${SECRET_KEY?Variable not set}
-      - FIRST_SUPERUSER=${FIRST_SUPERUSER?Variable not set}
-      - FIRST_SUPERUSER_PASSWORD=${FIRST_SUPERUSER_PASSWORD?Variable not set}
-      - SMTP_HOST=${SMTP_HOST}
-      - SMTP_USER=${SMTP_USER}
-      - SMTP_PASSWORD=${SMTP_PASSWORD}
-      - EMAILS_FROM_EMAIL=${EMAILS_FROM_EMAIL}
-      - AZURE_SQL_SERVER=${AZURE_SQL_SERVER?Variable not set}
-      - AZURE_SQL_DATABASE=${AZURE_SQL_DATABASE?Variable not set}
-      - AZURE_SQL_USER=${AZURE_SQL_USER?Variable not set}
-      - AZURE_SQL_PASSWORD=${AZURE_SQL_PASSWORD?Variable not set}
-      - AZURE_SQL_PORT=${AZURE_SQL_PORT}
-      - SENTRY_DSN=${SENTRY_DSN}
-      - AZURE_STORAGE_CONTAINER_URL=${AZURE_STORAGE_CONTAINER_URL}
-      - AZURE_STORAGE_SAS_TOKEN=${AZURE_STORAGE_SAS_TOKEN}
+      - ./backend/.env
     build:
       context: .
       dockerfile: backend/Dockerfile

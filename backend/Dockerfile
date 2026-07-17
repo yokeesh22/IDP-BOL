@@ -26,28 +26,26 @@ ENV UV_COMPILE_BYTECODE=1
 # Ref: https://docs.astral.sh/uv/guides/integration/docker/#caching
 ENV UV_LINK_MODE=copy
 
-WORKDIR /app/
+WORKDIR /app/backend/
 
 # Place executables in the environment at the front of the path
 # Ref: https://docs.astral.sh/uv/guides/integration/docker/#using-the-environment
-ENV PATH="/app/.venv/bin:$PATH"
+ENV PATH="/app/backend/.venv/bin:$PATH"
 
 # Install dependencies.
 # NOTE: plain COPY (not `RUN --mount=...`) so the image builds on the classic
 # Docker builder too — Azure Container Registry quick builds do not enable
 # BuildKit, which the --mount syntax requires.
-COPY uv.lock pyproject.toml /app/
-RUN uv sync --frozen --no-install-workspace --package app
+COPY ./backend/uv.lock ./backend/pyproject.toml /app/backend/
+RUN uv sync --frozen --no-install-project
 
 COPY ./backend/scripts /app/backend/scripts
 
-COPY ./backend/pyproject.toml ./backend/alembic.ini /app/backend/
+COPY ./backend/alembic.ini /app/backend/
 
 COPY ./backend/app /app/backend/app
 
-# Sync the project (installs the workspace package now that its sources exist).
-RUN uv sync --frozen --package app
-
-WORKDIR /app/backend/
+# Sync the project (installs the app package now that its sources exist).
+RUN uv sync --frozen
 
 CMD ["fastapi", "run", "--workers", "4", "app/main.py"]
