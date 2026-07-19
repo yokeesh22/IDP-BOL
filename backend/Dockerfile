@@ -58,13 +58,15 @@ RUN uv sync --frozen
 # Number of uvicorn worker processes. Overridable at deploy time via the
 # FASTAPI_WORKERS env var. NOTE: each worker is a full copy of the app (memory)
 # and runs its own in-process document worker, so this also multiplies
-# background processing concurrency. Default tuned for a 4 vCPU / 4 GiB backend:
-# fewer, "wider" workers keep baseline memory low.
-ENV FASTAPI_WORKERS=2
+# background processing concurrency. Default tuned for a 4 vCPU / 8 GiB backend:
+# one worker per core, which 8 GiB comfortably holds.
+ENV FASTAPI_WORKERS=4
 
-# Safe default background-render concurrency PER worker for a 4 vCPU / 4 GiB
-# backend: FASTAPI_WORKERS × PROCESSOR_CONCURRENCY = 2 × 2 = 4 concurrent PDF
-# renders (uses all cores) while only loading 2 app copies. Overridable via env
+# Background-processing concurrency PER worker for a 4 vCPU / 8 GiB backend:
+# FASTAPI_WORKERS × PROCESSOR_CONCURRENCY = 4 × 2 = 8 concurrent document
+# pipelines. The pipeline is I/O-heavy (Azure Form Recognizer + LLM calls), so
+# oversubscribing the 4 cores hides that wait and improves throughput; short
+# CPU bursts (PDF→image render) still fill the cores. Overridable via env
 # (a compose .env or the Azure portal value takes precedence over this default).
 ENV PROCESSOR_CONCURRENCY=2
 
