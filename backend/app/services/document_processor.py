@@ -175,6 +175,12 @@ def _process_document_blocking(doc_id: uuid.UUID) -> None:
             doc.processed_at = datetime.now(timezone.utc)
             doc.error_message = None
             session.add(doc)
+            # Record billable usage in the persistent ledger so the cost survives
+            # even if this document is later deleted.
+            if doc.ai_input_tokens is not None:
+                from app.services.usage import record_document_usage
+
+                record_document_usage(session, doc)
             session.commit()
         logger.info(
             "Document %s processed: %d pairs, %d tables",

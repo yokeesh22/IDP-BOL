@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Coins,
   DollarSign,
+  Download,
   FileText,
   Home,
   Loader2,
@@ -13,7 +14,7 @@ import {
   Sparkles,
   TrendingUp,
 } from "lucide-react"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Area,
   AreaChart,
@@ -26,8 +27,16 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
+import { toast } from "sonner"
 
-import { type MeteringRecord, fetchMeteringSummary } from "@/lib/api"
+import { ReportDialog } from "@/components/Common/ReportDialog"
+import { fetchMeteringSummary, type MeteringRecord } from "@/lib/api"
+import {
+  downloadWorkbook,
+  inRange,
+  type ResolvedRange,
+  rangeSlug,
+} from "@/lib/report"
 
 type RangeKey = "all" | "7d" | "30d" | "90d"
 
@@ -49,7 +58,9 @@ const DI_COLOR = "#016ac9"
 const AI_COLOR = "#7c3aed"
 
 function parseUtc(iso: string): Date {
-  return new Date(iso.endsWith("Z") || /[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`)
+  return new Date(
+    iso.endsWith("Z") || /[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`,
+  )
 }
 
 function localDayKey(d: Date): string {
@@ -80,7 +91,10 @@ function formatTokens(n: number): string {
   return n.toLocaleString()
 }
 
-function useFilteredRecords(records: MeteringRecord[], range: RangeKey): MeteringRecord[] {
+function useFilteredRecords(
+  records: MeteringRecord[],
+  range: RangeKey,
+): MeteringRecord[] {
   return useMemo(() => {
     const days = RANGE_DAYS[range]
     if (days === null) return records
@@ -176,11 +190,13 @@ function useCostSeries(records: MeteringRecord[], range: RangeKey) {
         const t = parseUtc(r.date).getTime()
         if (t < earliest) earliest = t
       }
-      const spanDays = Math.ceil((Date.now() - earliest) / (24 * 60 * 60 * 1000)) + 1
+      const spanDays =
+        Math.ceil((Date.now() - earliest) / (24 * 60 * 60 * 1000)) + 1
       days = Math.min(Math.max(spanDays, 14), 180)
     }
 
-    const buckets: { date: string; label: string; di: number; ai: number }[] = []
+    const buckets: { date: string; label: string; di: number; ai: number }[] =
+      []
     const map = new Map<string, number>()
     const today = new Date()
     today.setHours(0, 0, 0, 0)
@@ -189,7 +205,10 @@ function useCostSeries(records: MeteringRecord[], range: RangeKey) {
       const d = new Date(today)
       d.setDate(d.getDate() - i)
       const key = localDayKey(d)
-      const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+      const label = d.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      })
       buckets.push({ date: key, label, di: 0, ai: 0 })
       map.set(key, buckets.length - 1)
     }
@@ -209,6 +228,7 @@ function useCostSeries(records: MeteringRecord[], range: RangeKey) {
 
 export function Metering() {
   const [range, setRange] = useState<RangeKey>("all")
+  const [reportOpen, setReportOpen] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ["metering"],
@@ -218,6 +238,73 @@ export function Metering() {
 
   const records = useMemo(() => data?.records ?? [], [data])
   const currency = data?.rates.currency ?? "USD"
+
+  const handleDownloadReport = useCallback(
+    (reportRange: ResolvedRange) => {
+      const scoped = records.filter((r) => inRange(r.date, reportRange))
+      let diCost = 0
+      let aiCost = 0
+      let pages = 0
+      let inTok = 0
+      let outTok = 0
+      let docCount = 0
+      let chatCount = 0
+      for (const r of scoped) {
+        diCost += r.di_cost
+        aiCost += r.ai_cost
+        pages += r.pages
+        inTok += r.input_tokens
+        outTok += r.output_tokens
+        if (r.kind === "document") docCount += 1
+        else chatCount += 1
+      }
+      const rows: (string | number)[][] = [
+        [
+          "Date",
+          "Kind",
+          "Label",
+          "Pages",
+          "Input tokens",
+          "Output tokens",
+          `DI cost (${currency})`,
+          `AI cost (${currency})`,
+          `Total cost (${currency})`,
+        ],
+      ]
+      for (const r of scoped) {
+        rows.push([
+          r.date ? parseUtc(r.date).toLocaleString("en-US") : "",
+          r.kind,
+          r.label,
+          r.pages,
+          r.input_tokens,
+          r.output_tokens,
+          Number(r.di_cost.toFixed(6)),
+          Number(r.ai_cost.toFixed(6)),
+          Number(r.cost.toFixed(6)),
+        ])
+      }
+      rows.push([
+        "TOTAL",
+        `${docCount} doc / ${chatCount} chat`,
+        "",
+        pages,
+        inTok,
+        outTok,
+        Number(diCost.toFixed(6)),
+        Number(aiCost.toFixed(6)),
+        Number((diCost + aiCost).toFixed(6)),
+      ])
+
+      downloadWorkbook(`metering-${rangeSlug(reportRange)}.xlsx`, [
+        { name: "Metering", rows },
+      ])
+      toast.success("Report downloaded", {
+        description: `${scoped.length} record${scoped.length === 1 ? "" : "s"} · ${reportRange.label}`,
+      })
+    },
+    [records, currency],
+  )
 
   const filtered = useFilteredRecords(records, range)
   const m = useMetrics(filtered, records, range)
@@ -241,7 +328,11 @@ export function Metering() {
         : 0
   const trendWindowDays = RANGE_DAYS[range] ?? 7
   const trendWindowLabel =
-    trendWindowDays === 7 ? "week" : trendWindowDays === 30 ? "month" : `${trendWindowDays}d`
+    trendWindowDays === 7
+      ? "week"
+      : trendWindowDays === 30
+        ? "month"
+        : `${trendWindowDays}d`
 
   const avgCostPerDoc = m.docCount > 0 ? m.docCost / m.docCount : 0
 
@@ -265,13 +356,25 @@ export function Metering() {
             <ChevronRight className="h-3 w-3 opacity-45" />
             <span>Metering</span>
           </div>
-          <h1 className="text-[21px] font-semibold tracking-tight text-foreground">Metering</h1>
+          <h1 className="text-[21px] font-semibold tracking-tight text-foreground">
+            Metering
+          </h1>
           <p className="mt-0.5 text-[13px] text-muted-foreground">
-            Estimated usage cost for Document Intelligence and AI across processed
-            documents and assistant activity.
+            Estimated usage cost for Document Intelligence and AI across
+            processed documents and assistant activity.
           </p>
         </div>
-        <RangeSelector value={range} onChange={setRange} />
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setReportOpen(true)}
+            className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-md border bg-card px-3.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+          >
+            <Download className="h-4 w-4" />
+            Download report
+          </button>
+          <RangeSelector value={range} onChange={setRange} />
+        </div>
       </div>
 
       {/* KPI cards */}
@@ -304,7 +407,8 @@ export function Metering() {
           value={formatMoney(m.diCost, currency)}
           sub={
             <span className="text-xs text-muted-foreground">
-              {m.pages.toLocaleString()} page{m.pages === 1 ? "" : "s"} processed
+              {m.pages.toLocaleString()} page{m.pages === 1 ? "" : "s"}{" "}
+              processed
             </span>
           }
         />
@@ -340,8 +444,12 @@ export function Metering() {
         <Card className="lg:col-span-2">
           <div className="flex items-start justify-between px-5 pt-4">
             <div>
-              <div className="text-[13.5px] font-semibold text-foreground">Cost over time</div>
-              <div className="mt-0.5 text-xs text-muted-foreground">{RANGE_LABELS[range]}</div>
+              <div className="text-[13.5px] font-semibold text-foreground">
+                Cost over time
+              </div>
+              <div className="mt-0.5 text-xs text-muted-foreground">
+                {RANGE_LABELS[range]}
+              </div>
             </div>
             <div className="flex items-center gap-1.5 rounded-full border bg-secondary px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
               <TrendingUp className="h-3 w-3" />
@@ -350,7 +458,10 @@ export function Metering() {
           </div>
           <div className="h-[240px] px-2 pb-2 pt-3">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={series} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+              <AreaChart
+                data={series}
+                margin={{ top: 8, right: 12, bottom: 0, left: 0 }}
+              >
                 <defs>
                   <linearGradient id="diFill" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={DI_COLOR} stopOpacity={0.28} />
@@ -361,7 +472,11 @@ export function Metering() {
                     <stop offset="100%" stopColor={AI_COLOR} stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="#e2e8f0"
+                  vertical={false}
+                />
                 <XAxis
                   dataKey="label"
                   stroke="#94a3b8"
@@ -380,7 +495,11 @@ export function Metering() {
                   tickFormatter={(v) => formatMoney(v as number, currency)}
                 />
                 <Tooltip
-                  cursor={{ stroke: DI_COLOR, strokeWidth: 1, strokeOpacity: 0.3 }}
+                  cursor={{
+                    stroke: DI_COLOR,
+                    strokeWidth: 1,
+                    strokeOpacity: 0.3,
+                  }}
                   contentStyle={{
                     background: "#ffffff",
                     border: "1px solid #e2e8f0",
@@ -418,8 +537,12 @@ export function Metering() {
         {/* Cost breakdown donut */}
         <Card>
           <div className="px-5 pt-4">
-            <div className="text-[13.5px] font-semibold text-foreground">Cost breakdown</div>
-            <div className="mt-0.5 text-xs text-muted-foreground">By service</div>
+            <div className="text-[13.5px] font-semibold text-foreground">
+              Cost breakdown
+            </div>
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              By service
+            </div>
           </div>
           <div className="flex items-center gap-3 px-3 pb-4 pt-2">
             <div className="relative h-[180px] w-[180px] flex-shrink-0">
@@ -465,12 +588,17 @@ export function Metering() {
                 </span>
               ) : (
                 pieData.map((d) => (
-                  <div key={d.name} className="flex items-center gap-2 text-[12.5px]">
+                  <div
+                    key={d.name}
+                    className="flex items-center gap-2 text-[12.5px]"
+                  >
                     <span
                       className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
                       style={{ background: d.color }}
                     />
-                    <span className="truncate text-muted-foreground">{d.name}</span>
+                    <span className="truncate text-muted-foreground">
+                      {d.name}
+                    </span>
                     <span className="ml-auto font-medium text-foreground">
                       {formatMoney(d.value, currency)}
                     </span>
@@ -486,8 +614,12 @@ export function Metering() {
       <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-3">
         <Card>
           <div className="px-5 pt-4">
-            <div className="text-[13.5px] font-semibold text-foreground">Usage details</div>
-            <div className="mt-0.5 text-xs text-muted-foreground">Metered units this period</div>
+            <div className="text-[13.5px] font-semibold text-foreground">
+              Usage details
+            </div>
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              Metered units this period
+            </div>
           </div>
           <div className="space-y-3.5 px-5 pb-5 pt-3">
             <MiniStat
@@ -521,7 +653,9 @@ export function Metering() {
         <Card className="lg:col-span-2">
           <div className="flex items-center justify-between px-5 pt-4">
             <div>
-              <div className="text-[13.5px] font-semibold text-foreground">Rate card</div>
+              <div className="text-[13.5px] font-semibold text-foreground">
+                Rate card
+              </div>
               <div className="mt-0.5 text-xs text-muted-foreground">
                 List prices in {currency} · as of {data?.rates.as_of ?? "—"}
               </div>
@@ -541,30 +675,48 @@ export function Metering() {
                   color={DI_COLOR}
                   service="Document Intelligence"
                   unit="per 1,000 pages"
-                  rate={formatMoney(data?.rates.doc_intelligence_per_1k_pages ?? 0, currency)}
+                  rate={formatMoney(
+                    data?.rates.doc_intelligence_per_1k_pages ?? 0,
+                    currency,
+                  )}
                 />
                 <RateRow
                   color={AI_COLOR}
                   service="AI usage — input"
                   unit="per 1,000,000 tokens"
-                  rate={formatMoney(data?.rates.ai_input_per_1m_tokens ?? 0, currency)}
+                  rate={formatMoney(
+                    data?.rates.ai_input_per_1m_tokens ?? 0,
+                    currency,
+                  )}
                 />
                 <RateRow
                   color="#a855f7"
                   service="AI usage — output"
                   unit="per 1,000,000 tokens"
-                  rate={formatMoney(data?.rates.ai_output_per_1m_tokens ?? 0, currency)}
+                  rate={formatMoney(
+                    data?.rates.ai_output_per_1m_tokens ?? 0,
+                    currency,
+                  )}
                 />
               </tbody>
             </table>
             <p className="px-3 pt-3 text-[11px] text-muted-foreground/75">
-              Costs are estimates based on the rates above and measured usage (pages
-              analysed and AI tokens consumed). Actual invoiced amounts may differ with
-              committed-tier discounts or region.
+              Costs are estimates based on the rates above and measured usage
+              (pages analysed and AI tokens consumed). Actual invoiced amounts
+              may differ with committed-tier discounts or region.
             </p>
           </div>
         </Card>
       </div>
+
+      <ReportDialog
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+        title="Download metering report"
+        description="Export usage cost (summary + line items) as an Excel file."
+        initialRange={range}
+        onGenerate={handleDownloadReport}
+      />
     </div>
   )
 }
@@ -584,7 +736,10 @@ function RateRow({
     <tr className="border-b last:border-b-0">
       <td className="px-3 py-2.5">
         <span className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full" style={{ background: color }} />
+          <span
+            className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
+            style={{ background: color }}
+          />
           <span className="font-medium text-foreground">{service}</span>
         </span>
       </td>
@@ -599,7 +754,13 @@ function RateRow({
   )
 }
 
-function Card({ children, className }: { children: React.ReactNode; className?: string }) {
+function Card({
+  children,
+  className,
+}: {
+  children: React.ReactNode
+  className?: string
+}) {
   return (
     <div
       className={`overflow-hidden rounded-[13px] border bg-card ${className ?? ""}`}
@@ -775,7 +936,11 @@ function MiniStat({
       </div>
       <div className="min-w-0 flex-1">
         <div className="text-[12.5px] text-muted-foreground">{label}</div>
-        {sub && <div className="mt-0.5 text-[11px] text-muted-foreground/75">{sub}</div>}
+        {sub && (
+          <div className="mt-0.5 text-[11px] text-muted-foreground/75">
+            {sub}
+          </div>
+        )}
       </div>
       <div
         className="text-[14px] font-normal tabular-nums text-foreground/85"

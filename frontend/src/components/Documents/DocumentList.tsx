@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
-import useAuth from "@/hooks/useAuth"
 import {
   ChevronLeft,
   ChevronRight,
+  Download,
   Eye,
   FileText,
   Home,
@@ -14,15 +14,22 @@ import {
 } from "lucide-react"
 import { useCallback, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
-
+import { ReportDialog } from "@/components/Common/ReportDialog"
+import useAuth from "@/hooks/useAuth"
 import {
   type DocumentMeta,
   type DocumentStatus,
-  type ReviewStatus,
   deleteDocument,
   fetchDocuments,
+  type ReviewStatus,
   uploadDocument,
 } from "@/lib/api"
+import {
+  downloadWorkbook,
+  inRange,
+  type ResolvedRange,
+  rangeSlug,
+} from "@/lib/report"
 import { cn } from "@/lib/utils"
 
 type CombinedStatus = DocumentStatus | ReviewStatus
@@ -51,6 +58,20 @@ function formatDate(iso: string | null): string {
 function fileExt(name: string): string {
   const m = name.match(/\.([a-z0-9]+)$/i)
   return m ? m[1].toLowerCase() : "file"
+}
+
+function formatDateTimeCell(iso: string | null): string {
+  if (!iso) return ""
+  const d = new Date(
+    iso.endsWith("Z") || /[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`,
+  )
+  return d.toLocaleString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
 }
 
 const extStyles: Record<string, { bg: string; stroke: string }> = {
@@ -90,7 +111,14 @@ function FileIcon({ ext }: { ext: string }) {
 
 const statusMap: Record<
   CombinedStatus,
-  { label: string; bg: string; color: string; border: string; dot: string; blink?: boolean }
+  {
+    label: string
+    bg: string
+    color: string
+    border: string
+    dot: string
+    blink?: boolean
+  }
 > = {
   processed: {
     label: "Processed",
@@ -171,6 +199,7 @@ export function DocumentList() {
   const [page, setPage] = useState(1)
   const [isDragging, setIsDragging] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [reportOpen, setReportOpen] = useState(false)
 
   const { data: documents = [], isLoading } = useQuery({
     queryKey: ["documents"],
@@ -277,6 +306,45 @@ export function DocumentList() {
     })
   }
 
+  const handleDownloadReport = useCallback(
+    (range: ResolvedRange) => {
+      const inScope = documents.filter((d) => inRange(d.created_at, range))
+      const rows: (string | number)[][] = [
+        [
+          "Name",
+          "Type",
+          "Size (bytes)",
+          "Owner",
+          "Status",
+          "Review status",
+          "Pages",
+          "Uploaded",
+          "Processed",
+        ],
+      ]
+      for (const d of inScope) {
+        rows.push([
+          d.original_filename,
+          fileExt(d.original_filename).toUpperCase(),
+          d.file_size ?? 0,
+          d.owner_name || d.owner_email || "",
+          d.status,
+          d.review_status ?? "",
+          d.page_count ?? 0,
+          formatDateTimeCell(d.created_at),
+          formatDateTimeCell(d.processed_at),
+        ])
+      }
+      downloadWorkbook(`documents-${rangeSlug(range)}.xlsx`, [
+        { name: "Documents", rows },
+      ])
+      toast.success("Report downloaded", {
+        description: `${inScope.length} document${inScope.length === 1 ? "" : "s"} · ${range.label}`,
+      })
+    },
+    [documents],
+  )
+
   return (
     <div
       className="mx-auto max-w-[1300px] px-7 pb-14 pt-7"
@@ -303,19 +371,29 @@ export function DocumentList() {
             Manage, extract, and review your organization's documents
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploadMutation.isPending}
-          className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/90 disabled:opacity-60"
-        >
-          {uploadMutation.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Upload className="h-4 w-4" />
-          )}
-          Upload document
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setReportOpen(true)}
+            className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-md border bg-card px-3.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+          >
+            <Download className="h-4 w-4" />
+            Download report
+          </button>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploadMutation.isPending}
+            className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/90 disabled:opacity-60"
+          >
+            {uploadMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="h-4 w-4" />
+            )}
+            Upload document
+          </button>
+        </div>
         <input
           ref={fileInputRef}
           type="file"
@@ -401,7 +479,10 @@ export function DocumentList() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={7} className="py-16 text-center text-muted-foreground">
+                  <td
+                    colSpan={7}
+                    className="py-16 text-center text-muted-foreground"
+                  >
                     <Loader2 className="mx-auto mb-3 h-6 w-6 animate-spin" />
                     Loading documents…
                   </td>
@@ -413,7 +494,9 @@ export function DocumentList() {
                       <FileText className="h-6 w-6 text-muted-foreground/60" />
                     </div>
                     <p className="text-sm font-medium text-muted-foreground">
-                      {documents.length === 0 ? "No documents yet" : "No matches found"}
+                      {documents.length === 0
+                        ? "No documents yet"
+                        : "No matches found"}
                     </p>
                     <p className="mx-auto mt-1 max-w-sm text-xs text-muted-foreground/70">
                       {documents.length === 0
@@ -425,14 +508,18 @@ export function DocumentList() {
               ) : (
                 pageItems.map((d) => {
                   const ext = fileExt(d.original_filename)
-                  const ownerName = user?.full_name || user?.email || "—"
-                  const ownerInit = ownerName
-                    .split(/\s+/)
-                    .map((s) => s[0])
-                    .filter(Boolean)
-                    .slice(0, 2)
-                    .join("")
-                    .toUpperCase() || "·"
+                  const ownerName =
+                    d.owner_name ||
+                    d.owner_email ||
+                    (d.owner_id ? "—" : user?.full_name || user?.email || "—")
+                  const ownerInit =
+                    ownerName
+                      .split(/\s+/)
+                      .map((s) => s[0])
+                      .filter(Boolean)
+                      .slice(0, 2)
+                      .join("")
+                      .toUpperCase() || "·"
                   const canOpen = d.status === "processed"
                   return (
                     <tr
@@ -514,9 +601,7 @@ export function DocumentList() {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation()
-                              if (
-                                confirm(`Delete "${d.original_filename}"?`)
-                              ) {
+                              if (confirm(`Delete "${d.original_filename}"?`)) {
                                 deleteMutation.mutate(d.id)
                               }
                             }}
@@ -587,6 +672,14 @@ export function DocumentList() {
           </div>
         </div>
       )}
+
+      <ReportDialog
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+        title="Download document report"
+        description="Export the document library (filtered by upload date) as an Excel file."
+        onGenerate={handleDownloadReport}
+      />
     </div>
   )
 }

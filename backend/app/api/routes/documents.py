@@ -6,6 +6,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import selectinload
 from sqlmodel import col, func, select
 
 from app.api.deps import CurrentUser, SessionDep, get_user_from_token
@@ -25,7 +26,12 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 
 
 def _to_meta(doc: Document) -> DocumentMeta:
-    return DocumentMeta.model_validate(doc, from_attributes=True)
+    meta = DocumentMeta.model_validate(doc, from_attributes=True)
+    owner = doc.owner
+    if owner is not None:
+        meta.owner_name = owner.full_name
+        meta.owner_email = owner.email
+    return meta
 
 
 def _page_image_paths(doc: Document) -> list[str]:
@@ -45,7 +51,7 @@ def list_documents(
     session: SessionDep,
     current_user: CurrentUser,
     skip: int = 0,
-    limit: int = 200,
+    limit: int | None = None,
 ) -> Any:
     base_q = select(Document)
     count_q = select(func.count()).select_from(Document)
@@ -53,9 +59,17 @@ def list_documents(
         base_q = base_q.where(Document.owner_id == current_user.id)
         count_q = count_q.where(Document.owner_id == current_user.id)
     count = session.exec(count_q).one()
-    docs = session.exec(
-        base_q.order_by(col(Document.created_at).desc()).offset(skip).limit(limit)
-    ).all()
+    # Eager-load the owner so building DocumentMeta doesn't fire an N+1 query per
+    # document (superusers can now fetch the whole, uncapped library at once).
+    q = (
+        base_q.options(selectinload(Document.owner))  # type: ignore[arg-type]
+        .order_by(col(Document.created_at).desc())
+        .offset(skip)
+    )
+    # `limit=None` means "no cap" — return every document the user can see.
+    if limit is not None:
+        q = q.limit(limit)
+    docs = session.exec(q).all()
     return DocumentsPublic(data=[_to_meta(d) for d in docs], count=count)
 
 
@@ -265,6 +279,10 @@ async def get_bol_fields(
             doc.ai_input_tokens = result["usage"].get("input_tokens", 0)
             doc.ai_output_tokens = result["usage"].get("output_tokens", 0)
         session.add(doc)
+        if doc.ai_input_tokens is not None:
+            from app.services.usage import record_document_usage
+
+            record_document_usage(session, doc)
         session.commit()
         return BolFieldsResponse(
             kv_fields=[BolKvField(**f) for f in result["kv_fields"]],

@@ -141,6 +141,12 @@ class DocumentMeta(SQLModel):
     review_status: str | None = None
     review_comment: str | None = None
     reviewed_at: datetime | None = None
+    # Who uploaded the document. Populated from the `owner` relationship so the
+    # UI can show the real owner (important for superusers, who see everyone's
+    # documents) instead of assuming the current viewer.
+    owner_id: uuid.UUID | None = None
+    owner_name: str | None = None
+    owner_email: str | None = None
 
 
 class DocumentDetail(DocumentMeta):
@@ -194,6 +200,40 @@ class ChatMessagePublic(SQLModel):
     role: str
     content: str
     created_at: datetime | None
+
+
+class UsageKind:
+    DOCUMENT = "document"
+    CHAT = "chat"
+
+
+class UsageRecord(SQLModel, table=True):
+    """Persistent, append-only ledger of billable usage events.
+
+    Each processed document and each assistant chat reply writes one row here at
+    the moment the cost is incurred. Metering reads *only* from this table, so
+    deleting a document (or a user) never erases historical cost — the spend
+    already happened and stays on the books.
+
+    ``document_id`` / ``user_id`` are intentionally plain UUID columns with *no*
+    foreign key. This keeps the ledger fully decoupled from the source rows:
+    deletes can't cascade into it and can't be blocked by it, and the
+    denormalized ``label`` snapshot means reports stay readable even after the
+    original document is gone.
+    """
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    kind: str = Field(index=True, max_length=32)  # UsageKind.DOCUMENT | CHAT
+    label: str = Field(default="", max_length=512)
+    document_id: uuid.UUID | None = Field(default=None, index=True)
+    user_id: uuid.UUID | None = Field(default=None, index=True)
+    pages: int = Field(default=0)
+    input_tokens: int = Field(default=0)
+    output_tokens: int = Field(default=0)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
 
 
 class Message(SQLModel):

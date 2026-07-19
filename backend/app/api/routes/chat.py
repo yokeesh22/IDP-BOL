@@ -8,6 +8,7 @@ from sqlmodel import select
 from app.api.deps import CurrentUser, SessionDep
 from app.models import ChatMessage, ChatMessagePublic, ChatSession, ChatSessionPublic
 from app.services.db_chat import invoke_chat, invoke_document_chat
+from app.services.usage import record_chat_usage
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -140,6 +141,17 @@ async def send_message(
     if not chat_session.title:
         chat_session.title = request.message[:100]
         db.add(chat_session)
+
+    # Persist billable AI usage in the ledger so cost survives chat/document
+    # deletion. Use the (possibly just-set) title as the denormalized label.
+    record_chat_usage(
+        db,
+        label=chat_session.title,
+        document_id=chat_session.document_id,
+        user_id=current_user.id,
+        input_tokens=usage[0],
+        output_tokens=usage[1],
+    )
 
     db.commit()
     db.refresh(assistant_msg)

@@ -21,7 +21,7 @@ from sqlmodel import col, select
 
 from app.api.deps import SessionDep, get_current_active_superuser
 from app.core.config import settings
-from app.models import ChatMessage, ChatSession, Document, DocumentStatus
+from app.models import UsageKind, UsageRecord
 
 router = APIRouter(prefix="/metering", tags=["metering"])
 
@@ -70,53 +70,29 @@ def _ai_cost(input_tokens: int, output_tokens: int) -> float:
 def metering_summary(session: SessionDep) -> Any:
     records: list[MeteringRecord] = []
 
-    # ── Documents: Document Intelligence (pages) + AI extraction (tokens) ─────
-    docs = session.exec(
-        select(Document)
-        .where(Document.status == DocumentStatus.PROCESSED)
-        .where(col(Document.ai_input_tokens).is_not(None))
+    # Read from the persistent usage ledger, not the live document/chat tables,
+    # so cost is preserved after a document, chat, or user is deleted. Document
+    # Intelligence is billed per page; AI is billed per input/output token.
+    usage_rows = session.exec(
+        select(UsageRecord).order_by(col(UsageRecord.created_at).desc())
     ).all()
-    for d in docs:
-        pages = d.page_count or 0
-        in_tok = d.ai_input_tokens or 0
-        out_tok = d.ai_output_tokens or 0
-        di = _di_cost(pages)
+    for u in usage_rows:
+        pages = u.pages or 0
+        in_tok = u.input_tokens or 0
+        out_tok = u.output_tokens or 0
+        di = _di_cost(pages) if u.kind == UsageKind.DOCUMENT else 0.0
         ai = _ai_cost(in_tok, out_tok)
         records.append(
             MeteringRecord(
-                date=d.processed_at or d.created_at,
-                kind="document",
-                label=d.original_filename,
+                date=u.created_at,
+                kind=u.kind,
+                label=u.label,
                 pages=pages,
                 input_tokens=in_tok,
                 output_tokens=out_tok,
                 di_cost=round(di, 6),
                 ai_cost=round(ai, 6),
                 cost=round(di + ai, 6),
-            )
-        )
-
-    # ── Chat: AI usage only (both the global and per-document chatbots) ───────
-    chat_rows = session.exec(
-        select(ChatMessage, ChatSession.title)
-        .join(ChatSession, col(ChatMessage.session_id) == col(ChatSession.id))
-        .where(col(ChatMessage.ai_input_tokens).is_not(None))
-    ).all()
-    for msg, title in chat_rows:
-        in_tok = msg.ai_input_tokens or 0
-        out_tok = msg.ai_output_tokens or 0
-        ai = _ai_cost(in_tok, out_tok)
-        records.append(
-            MeteringRecord(
-                date=msg.created_at,
-                kind="chat",
-                label=title or "Untitled chat",
-                pages=0,
-                input_tokens=in_tok,
-                output_tokens=out_tok,
-                di_cost=0.0,
-                ai_cost=round(ai, 6),
-                cost=round(ai, 6),
             )
         )
 

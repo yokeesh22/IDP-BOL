@@ -158,8 +158,9 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
                     <FormLabel>Set Password</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="Password"
+                        placeholder="Leave blank to keep current password"
                         type="password"
+                        autoComplete="new-password"
                         {...field}
                       />
                     </FormControl>
@@ -178,6 +179,7 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
                       <Input
                         placeholder="Password"
                         type="password"
+                        autoComplete="new-password"
                         {...field}
                       />
                     </FormControl>

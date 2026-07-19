@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronRight,
   Clock,
+  Download,
   FileText,
   HardDrive,
   Home,
@@ -16,7 +17,7 @@ import {
   TrendingUp,
   XCircle,
 } from "lucide-react"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Area,
   AreaChart,
@@ -29,13 +30,22 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
+import { toast } from "sonner"
 
+import { ReportDialog } from "@/components/Common/ReportDialog"
 import { type DocumentMeta, fetchDocuments } from "@/lib/api"
+import {
+  downloadWorkbook,
+  inRange,
+  type ResolvedRange,
+  rangeSlug,
+} from "@/lib/report"
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (bytes < 1024 * 1024 * 1024)
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
 }
 
@@ -97,7 +107,9 @@ interface Metrics {
 }
 
 function parseUtc(iso: string): Date {
-  return new Date(iso.endsWith("Z") || /[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`)
+  return new Date(
+    iso.endsWith("Z") || /[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`,
+  )
 }
 
 function localDayKey(d: Date): string {
@@ -107,7 +119,10 @@ function localDayKey(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
-function useFilteredDocs(docs: DocumentMeta[], range: RangeKey): DocumentMeta[] {
+function useFilteredDocs(
+  docs: DocumentMeta[],
+  range: RangeKey,
+): DocumentMeta[] {
   return useMemo(() => {
     const days = RANGE_DAYS[range]
     if (days === null) return docs
@@ -119,7 +134,11 @@ function useFilteredDocs(docs: DocumentMeta[], range: RangeKey): DocumentMeta[] 
   }, [docs, range])
 }
 
-function useMetrics(docs: DocumentMeta[], allDocs: DocumentMeta[], range: RangeKey): Metrics {
+function useMetrics(
+  docs: DocumentMeta[],
+  allDocs: DocumentMeta[],
+  range: RangeKey,
+): Metrics {
   return useMemo(() => {
     let processed = 0
     let processing = 0
@@ -206,7 +225,8 @@ function useUploadSeries(docs: DocumentMeta[], range: RangeKey) {
         const t = parseUtc(d.created_at).getTime()
         if (t < earliest) earliest = t
       }
-      const spanDays = Math.ceil((Date.now() - earliest) / (24 * 60 * 60 * 1000)) + 1
+      const spanDays =
+        Math.ceil((Date.now() - earliest) / (24 * 60 * 60 * 1000)) + 1
       days = Math.min(Math.max(spanDays, 14), 180)
     }
 
@@ -219,7 +239,10 @@ function useUploadSeries(docs: DocumentMeta[], range: RangeKey) {
       const d = new Date(today)
       d.setDate(d.getDate() - i)
       const key = localDayKey(d)
-      const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+      const label = d.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      })
       buckets.push({ date: key, label, uploads: 0 })
       map.set(key, buckets.length - 1)
     }
@@ -241,21 +264,42 @@ const STATUS_GRADIENTS: Record<
   string,
   { id: string; from: string; to: string; solid: string }
 > = {
-  Approved: { id: "pieApproved", from: "#22c55e", to: "#15803d", solid: "#16a34a" },
-  Rejected: { id: "pieRejected", from: "#f87171", to: "#b91c1c", solid: "#dc2626" },
+  Approved: {
+    id: "pieApproved",
+    from: "#22c55e",
+    to: "#15803d",
+    solid: "#16a34a",
+  },
+  Rejected: {
+    id: "pieRejected",
+    from: "#f87171",
+    to: "#b91c1c",
+    solid: "#dc2626",
+  },
   "Awaiting review": {
     id: "pieAwaiting",
     from: "#60a5fa",
     to: "#0158aa",
     solid: "#016ac9",
   },
-  Processing: { id: "pieProcessing", from: "#fbbf24", to: "#c2410c", solid: "#f59e0b" },
-  Pending: { id: "piePending", from: "#cbd5e1", to: "#64748b", solid: "#94a3b8" },
+  Processing: {
+    id: "pieProcessing",
+    from: "#fbbf24",
+    to: "#c2410c",
+    solid: "#f59e0b",
+  },
+  Pending: {
+    id: "piePending",
+    from: "#cbd5e1",
+    to: "#64748b",
+    solid: "#94a3b8",
+  },
   Error: { id: "pieError", from: "#fb7185", to: "#9f1239", solid: "#ef4444" },
 }
 
 export function Dashboard() {
   const [range, setRange] = useState<RangeKey>("all")
+  const [reportOpen, setReportOpen] = useState(false)
 
   const { data: documents = [], isLoading } = useQuery({
     queryKey: ["documents"],
@@ -315,11 +359,88 @@ export function Dashboard() {
     [documents],
   )
 
+  const handleDownloadReport = useCallback(
+    (reportRange: ResolvedRange) => {
+      const scope = documents.filter((d) => inRange(d.created_at, reportRange))
+
+      let processed = 0
+      let processing = 0
+      let pending = 0
+      let errored = 0
+      let approved = 0
+      let rejected = 0
+      let awaitingReview = 0
+      let totalPages = 0
+      let totalSize = 0
+      let procSum = 0
+      let procCount = 0
+
+      for (const d of scope) {
+        totalSize += d.file_size || 0
+        totalPages += d.page_count || 0
+        if (d.status === "processed") processed += 1
+        else if (d.status === "processing") processing += 1
+        else if (d.status === "pending") pending += 1
+        else if (d.status === "error") errored += 1
+        if (d.status === "processed") {
+          if (d.review_status === "approved") approved += 1
+          else if (d.review_status === "rejected") rejected += 1
+          else awaitingReview += 1
+        }
+        if (d.created_at && d.processed_at) {
+          const start = parseUtc(d.created_at).getTime()
+          const end = parseUtc(d.processed_at).getTime()
+          if (end > start) {
+            procSum += end - start
+            procCount += 1
+          }
+        }
+      }
+
+      const reviewed = approved + rejected
+      const avgProcMs = procCount > 0 ? procSum / procCount : null
+      const approvalRate = reviewed > 0 ? (approved / reviewed) * 100 : 0
+      const reviewRate = processed > 0 ? (reviewed / processed) * 100 : 0
+
+      const rows: (string | number)[][] = [
+        ["Metric", "Value"],
+        ["Time range", reportRange.label],
+        ["Generated", new Date().toLocaleString("en-US")],
+        ["Total documents", scope.length],
+        ["Processed", processed],
+        ["Processing", processing],
+        ["Pending", pending],
+        ["Errored", errored],
+        ["Approved", approved],
+        ["Rejected", rejected],
+        ["Awaiting review", awaitingReview],
+        ["Approval rate (%)", Number(approvalRate.toFixed(1))],
+        ["Reviewed (%)", Number(reviewRate.toFixed(1))],
+        ["Pages processed", totalPages],
+        ["Storage used", formatBytes(totalSize)],
+        [
+          "Avg processing time",
+          avgProcMs !== null ? formatDuration(avgProcMs) : "—",
+        ],
+      ]
+
+      downloadWorkbook(`dashboard-${rangeSlug(reportRange)}.xlsx`, [
+        { name: "Dashboard", rows },
+      ])
+      toast.success("Report downloaded", {
+        description: `${scope.length} document${scope.length === 1 ? "" : "s"} · ${reportRange.label}`,
+      })
+    },
+    [documents],
+  )
+
   if (isLoading) {
     return (
       <div className="mx-auto flex max-w-[1300px] items-center justify-center px-7 py-32">
         <Loader2 className="mr-2 h-5 w-5 animate-spin text-muted-foreground" />
-        <span className="text-sm text-muted-foreground">Loading dashboard…</span>
+        <span className="text-sm text-muted-foreground">
+          Loading dashboard…
+        </span>
       </div>
     )
   }
@@ -343,7 +464,17 @@ export function Dashboard() {
             your organization.
           </p>
         </div>
-        <RangeSelector value={range} onChange={setRange} />
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setReportOpen(true)}
+            className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-md border bg-card px-3.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+          >
+            <Download className="h-4 w-4" />
+            Download report
+          </button>
+          <RangeSelector value={range} onChange={setRange} />
+        </div>
       </div>
 
       {/* KPI cards */}
@@ -461,7 +592,11 @@ export function Dashboard() {
                   width={28}
                 />
                 <Tooltip
-                  cursor={{ stroke: "#016ac9", strokeWidth: 1, strokeOpacity: 0.3 }}
+                  cursor={{
+                    stroke: "#016ac9",
+                    strokeWidth: 1,
+                    strokeOpacity: 0.3,
+                  }}
                   contentStyle={{
                     background: "#ffffff",
                     border: "1px solid #e2e8f0",
@@ -514,8 +649,16 @@ export function Dashboard() {
                             x2="0"
                             y2="1"
                           >
-                            <stop offset="0%" stopColor={g.from} stopOpacity={1} />
-                            <stop offset="100%" stopColor={g.to} stopOpacity={1} />
+                            <stop
+                              offset="0%"
+                              stopColor={g.from}
+                              stopOpacity={1}
+                            />
+                            <stop
+                              offset="100%"
+                              stopColor={g.to}
+                              stopOpacity={1}
+                            />
                           </linearGradient>
                         ))}
                       </defs>
@@ -669,6 +812,15 @@ export function Dashboard() {
           </div>
         </Card>
       </div>
+
+      <ReportDialog
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+        title="Download dashboard report"
+        description="Export dashboard metrics and underlying documents as an Excel file."
+        initialRange={range}
+        onGenerate={handleDownloadReport}
+      />
     </div>
   )
 }

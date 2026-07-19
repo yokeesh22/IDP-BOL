@@ -1,8 +1,17 @@
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, col, create_engine, func, select
 
 from app import crud
 from app.core.config import settings
-from app.models import User, UserCreate
+from app.models import (
+    ChatMessage,
+    ChatSession,
+    Document,
+    DocumentStatus,
+    UsageKind,
+    UsageRecord,
+    User,
+    UserCreate,
+)
 
 # `pool_pre_ping` transparently recycles connections that Azure SQL has closed
 # after an idle period; `pool_recycle` proactively refreshes them well before
@@ -30,3 +39,58 @@ def init_db(session: Session) -> None:
             is_superuser=True,
         )
         user = crud.create_user(session=session, user_create=user_in)
+
+    backfill_usage_records(session)
+
+
+def backfill_usage_records(session: Session) -> None:
+    """Seed the usage ledger from pre-existing document/chat token usage.
+
+    Runs once: if the ledger already has any rows we assume the migration is
+    done and return immediately, so this is safe to call on every startup. This
+    preserves historical metering totals when upgrading to the ledger-based
+    metering (previously computed live off the document/chat tables).
+    """
+    already = session.exec(select(func.count()).select_from(UsageRecord)).one()
+    if already:
+        return
+
+    docs = session.exec(
+        select(Document)
+        .where(Document.status == DocumentStatus.PROCESSED)
+        .where(col(Document.ai_input_tokens).is_not(None))
+    ).all()
+    for d in docs:
+        session.add(
+            UsageRecord(
+                kind=UsageKind.DOCUMENT,
+                label=d.original_filename,
+                document_id=d.id,
+                user_id=d.owner_id,
+                pages=d.page_count or 0,
+                input_tokens=d.ai_input_tokens or 0,
+                output_tokens=d.ai_output_tokens or 0,
+                created_at=d.processed_at or d.created_at,
+            )
+        )
+
+    chat_rows = session.exec(
+        select(ChatMessage, ChatSession)
+        .join(ChatSession, col(ChatMessage.session_id) == col(ChatSession.id))
+        .where(col(ChatMessage.ai_input_tokens).is_not(None))
+    ).all()
+    for msg, chat_session in chat_rows:
+        session.add(
+            UsageRecord(
+                kind=UsageKind.CHAT,
+                label=chat_session.title or "Untitled chat",
+                document_id=chat_session.document_id,
+                user_id=chat_session.user_id,
+                pages=0,
+                input_tokens=msg.ai_input_tokens or 0,
+                output_tokens=msg.ai_output_tokens or 0,
+                created_at=msg.created_at,
+            )
+        )
+
+    session.commit()

@@ -88,6 +88,9 @@ export interface DocumentMeta {
   review_status: ReviewStatus | null
   review_comment: string | null
   reviewed_at: string | null
+  owner_id: string | null
+  owner_name: string | null
+  owner_email: string | null
 }
 
 export interface DocumentDetail extends DocumentMeta {
@@ -129,7 +132,10 @@ export async function updateDocumentFields(
     bol_line_items?: Record<string, string | null>[]
   },
 ): Promise<DocumentDetail> {
-  const { data } = await api.patch<DocumentDetail>(`/documents/${id}/fields`, payload)
+  const { data } = await api.patch<DocumentDetail>(
+    `/documents/${id}/fields`,
+    payload,
+  )
   return data
 }
 
@@ -137,7 +143,10 @@ export async function reviewDocument(
   id: string,
   payload: { review_status: ReviewStatus; review_comment?: string | null },
 ): Promise<DocumentDetail> {
-  const { data } = await api.patch<DocumentDetail>(`/documents/${id}/review`, payload)
+  const { data } = await api.patch<DocumentDetail>(
+    `/documents/${id}/review`,
+    payload,
+  )
   return data
 }
 
@@ -157,8 +166,12 @@ export interface ChatMessage {
   created_at: string | null
 }
 
-export async function createChatSession(documentId?: string): Promise<ChatSession> {
-  const { data } = await api.post<ChatSession>("/chat/sessions", { document_id: documentId ?? null })
+export async function createChatSession(
+  documentId?: string,
+): Promise<ChatSession> {
+  const { data } = await api.post<ChatSession>("/chat/sessions", {
+    document_id: documentId ?? null,
+  })
   return data
 }
 
@@ -167,18 +180,32 @@ export async function listChatSessions(): Promise<ChatSession[]> {
   return data
 }
 
-export async function listDocumentChatSessions(documentId: string): Promise<ChatSession[]> {
-  const { data } = await api.get<ChatSession[]>(`/chat/sessions/document/${documentId}`)
+export async function listDocumentChatSessions(
+  documentId: string,
+): Promise<ChatSession[]> {
+  const { data } = await api.get<ChatSession[]>(
+    `/chat/sessions/document/${documentId}`,
+  )
   return data
 }
 
-export async function getChatMessages(sessionId: string): Promise<ChatMessage[]> {
-  const { data } = await api.get<ChatMessage[]>(`/chat/sessions/${sessionId}/messages`)
+export async function getChatMessages(
+  sessionId: string,
+): Promise<ChatMessage[]> {
+  const { data } = await api.get<ChatMessage[]>(
+    `/chat/sessions/${sessionId}/messages`,
+  )
   return data
 }
 
-export async function sendChatMessage(sessionId: string, message: string): Promise<ChatMessage> {
-  const { data } = await api.post<ChatMessage>(`/chat/sessions/${sessionId}/messages`, { message })
+export async function sendChatMessage(
+  sessionId: string,
+  message: string,
+): Promise<ChatMessage> {
+  const { data } = await api.post<ChatMessage>(
+    `/chat/sessions/${sessionId}/messages`,
+    { message },
+  )
   return data
 }
 
@@ -192,8 +219,8 @@ export interface BolKvField {
   label: string
   value: string | null
   found: boolean
-  kv_pair_index: number       // index into key_value_pairs, -1 if unmatched
-  judge_corrected: boolean    // true if the judge pass changed this field
+  kv_pair_index: number // index into key_value_pairs, -1 if unmatched
+  judge_corrected: boolean // true if the judge pass changed this field
 }
 
 export interface BolFieldsResponse {
@@ -201,8 +228,12 @@ export interface BolFieldsResponse {
   line_items: Record<string, string | null>[]
 }
 
-export async function fetchBolFields(docId: string): Promise<BolFieldsResponse> {
-  const { data } = await api.get<BolFieldsResponse>(`/documents/${docId}/bol-fields`)
+export async function fetchBolFields(
+  docId: string,
+): Promise<BolFieldsResponse> {
+  const { data } = await api.get<BolFieldsResponse>(
+    `/documents/${docId}/bol-fields`,
+  )
   return data
 }
 
