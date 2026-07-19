@@ -41,6 +41,13 @@ RUN uv sync --frozen --no-install-project
 
 COPY ./backend/scripts /app/backend/scripts
 
+# Defensive: strip CRLF from the shell scripts in case the build context was
+# checked out on a machine with core.autocrlf=true. Linux bash cannot run
+# scripts with trailing '\r' ("$'\r': command not found"), which would break
+# prestart (schema creation + superuser seed). Belt-and-suspenders alongside
+# the repo .gitattributes.
+RUN sed -i 's/\r$//' /app/backend/scripts/*.sh
+
 COPY ./backend/alembic.ini /app/backend/
 
 COPY ./backend/app /app/backend/app

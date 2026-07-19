@@ -1,0 +1,20 @@
+# Normalize line endings: store LF in the repo and check out LF everywhere.
+# Without this, a build machine with core.autocrlf=true checks out shell
+# scripts as CRLF, which then get baked into the Linux image and break bash
+# (e.g. prestart.sh: "$'\r': command not found").
+* text=auto eol=lf
+
+# Files executed inside the Linux containers must always be LF.
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.py text eol=lf
+
+# Common binary assets — never modify.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary

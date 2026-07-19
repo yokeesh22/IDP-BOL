@@ -73,6 +73,13 @@ def list_documents(
     return DocumentsPublic(data=[_to_meta(d) for d in docs], count=count)
 
 
+@router.get("/ping")
+def ping() -> dict[str, str]:
+    # Temporary deploy-verification endpoint. Hit GET /api/v1/documents/ping —
+    # if it returns this payload, the running backend includes the latest code.
+    return {"status": "ok", "build": "owner+metering+reports"}
+
+
 @router.get("/{doc_id}", response_model=DocumentDetail)
 def get_document(
     session: SessionDep, current_user: CurrentUser, doc_id: uuid.UUID
