@@ -320,6 +320,20 @@ async def invoke_chat(messages: list[BaseMessage]) -> tuple[str, tuple[int, int]
     return text, sum_usage(all_messages)
 
 
+def invoke_chat_sync(messages: list[BaseMessage]) -> tuple[str, tuple[int, int]]:
+    """Synchronous variant of :func:`invoke_chat`.
+
+    Used by the (sync ``def``) chat route so the model call and its synchronous
+    DB tool calls run in FastAPI's threadpool instead of blocking the event loop.
+    """
+    graph = _get_graph()
+    result = graph.invoke({"messages": messages})
+    all_messages = result["messages"]
+    last = all_messages[-1]
+    text = last.content if isinstance(last.content, str) else str(last.content)
+    return text, sum_usage(all_messages)
+
+
 def _fetch_document_context(document_id: str) -> dict[str, Any]:
     """Load all extracted document data from DB in one shot."""
     try:
@@ -465,6 +479,19 @@ async def invoke_document_chat(
     graph = _get_document_graph()
     fresh_prompt = _build_document_system_prompt(document_id)
     result = await graph.ainvoke({"messages": messages, "system_prompt": fresh_prompt})
+    all_messages = result["messages"]
+    last = all_messages[-1]
+    text = last.content if isinstance(last.content, str) else str(last.content)
+    return text, sum_usage(all_messages)
+
+
+def invoke_document_chat_sync(
+    document_id: str, messages: list[BaseMessage]
+) -> tuple[str, tuple[int, int]]:
+    """Synchronous variant of :func:`invoke_document_chat` (runs in threadpool)."""
+    graph = _get_document_graph()
+    fresh_prompt = _build_document_system_prompt(document_id)
+    result = graph.invoke({"messages": messages, "system_prompt": fresh_prompt})
     all_messages = result["messages"]
     last = all_messages[-1]
     text = last.content if isinstance(last.content, str) else str(last.content)

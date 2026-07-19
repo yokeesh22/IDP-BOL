@@ -7,7 +7,7 @@ from sqlmodel import select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.models import ChatMessage, ChatMessagePublic, ChatSession, ChatSessionPublic
-from app.services.db_chat import invoke_chat, invoke_document_chat
+from app.services.db_chat import invoke_chat_sync, invoke_document_chat_sync
 from app.services.usage import record_chat_usage
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -24,7 +24,7 @@ class SendMessageRequest(BaseModel):
 # ── Sessions ──────────────────────────────────────────────────────────────────
 
 @router.post("/sessions", response_model=ChatSessionPublic)
-async def create_session(
+def create_session(
     request: CreateSessionRequest,
     db: SessionDep,
     current_user: CurrentUser,
@@ -37,7 +37,7 @@ async def create_session(
 
 
 @router.get("/sessions", response_model=list[ChatSessionPublic])
-async def list_sessions(db: SessionDep, current_user: CurrentUser) -> list[ChatSessionPublic]:
+def list_sessions(db: SessionDep, current_user: CurrentUser) -> list[ChatSessionPublic]:
     sessions = db.exec(
         select(ChatSession)
         .where(ChatSession.user_id == current_user.id)
@@ -48,7 +48,7 @@ async def list_sessions(db: SessionDep, current_user: CurrentUser) -> list[ChatS
 
 
 @router.get("/sessions/document/{document_id}", response_model=list[ChatSessionPublic])
-async def list_document_sessions(
+def list_document_sessions(
     document_id: uuid.UUID, db: SessionDep, current_user: CurrentUser
 ) -> list[ChatSessionPublic]:
     sessions = db.exec(
@@ -61,7 +61,7 @@ async def list_document_sessions(
 
 
 @router.delete("/sessions/{session_id}")
-async def delete_session(
+def delete_session(
     session_id: uuid.UUID, db: SessionDep, current_user: CurrentUser
 ) -> dict[str, str]:
     session = db.get(ChatSession, session_id)
@@ -75,7 +75,7 @@ async def delete_session(
 # ── Messages ──────────────────────────────────────────────────────────────────
 
 @router.get("/sessions/{session_id}/messages", response_model=list[ChatMessagePublic])
-async def get_messages(
+def get_messages(
     session_id: uuid.UUID, db: SessionDep, current_user: CurrentUser
 ) -> list[ChatMessagePublic]:
     session = db.get(ChatSession, session_id)
@@ -91,7 +91,7 @@ async def get_messages(
 
 
 @router.post("/sessions/{session_id}/messages", response_model=ChatMessagePublic)
-async def send_message(
+def send_message(
     session_id: uuid.UUID,
     request: SendMessageRequest,
     db: SessionDep,
@@ -121,11 +121,11 @@ async def send_message(
 
     try:
         if chat_session.document_id:
-            response_text, usage = await invoke_document_chat(
+            response_text, usage = invoke_document_chat_sync(
                 str(chat_session.document_id), lc_messages
             )
         else:
-            response_text, usage = await invoke_chat(lc_messages)
+            response_text, usage = invoke_chat_sync(lc_messages)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

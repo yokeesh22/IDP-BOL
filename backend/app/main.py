@@ -6,12 +6,10 @@ import sentry_sdk
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
-from sqlmodel import Session
 from starlette.middleware.cors import CORSMiddleware
 
 from app.api.main import api_router
 from app.core.config import settings
-from app.core.db import engine, init_db
 from app.services.document_processor import document_worker
 
 
@@ -27,11 +25,10 @@ if settings.SENTRY_DSN and settings.ENVIRONMENT != "local":
 async def lifespan(app: FastAPI):
     if not settings.use_blob_storage:
         Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
-    # Initialize the SQLite schema and seed the superuser. Safe to run on every
-    # startup: create_all is a no-op for existing tables and the superuser
-    # insert is idempotent.
-    with Session(engine) as session:
-        init_db(session)
+    # Schema creation and superuser seeding are handled once at container start
+    # by `scripts/prestart.sh` (see backend/Dockerfile CMD and compose prestart
+    # service), NOT here — running init_db in the lifespan would execute once per
+    # uvicorn worker process/replica and race on create_all + the seed insert.
     stop_event = asyncio.Event()
     worker_task = asyncio.create_task(document_worker(stop_event))
     try:

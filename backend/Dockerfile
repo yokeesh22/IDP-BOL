@@ -48,4 +48,21 @@ COPY ./backend/app /app/backend/app
 # Sync the project (installs the app package now that its sources exist).
 RUN uv sync --frozen
 
-CMD ["fastapi", "run", "--workers", "4", "app/main.py"]
+# Number of uvicorn worker processes. Overridable at deploy time via the
+# FASTAPI_WORKERS env var. NOTE: each worker is a full copy of the app (memory)
+# and runs its own in-process document worker, so this also multiplies
+# background processing concurrency. Default tuned for a 4 vCPU / 4 GiB backend:
+# fewer, "wider" workers keep baseline memory low.
+ENV FASTAPI_WORKERS=2
+
+# Safe default background-render concurrency PER worker for a 4 vCPU / 4 GiB
+# backend: FASTAPI_WORKERS × PROCESSOR_CONCURRENCY = 2 × 2 = 4 concurrent PDF
+# renders (uses all cores) while only loading 2 app copies. Overridable via env
+# (a compose .env or the Azure portal value takes precedence over this default).
+ENV PROCESSOR_CONCURRENCY=2
+
+# Run schema creation + superuser seed exactly once (single process) before
+# starting the server, then launch the workers. Keeping prestart here — rather
+# than in the app lifespan — avoids every worker/replica racing on create_all
+# and the seed insert. Uses the shell form so ${FASTAPI_WORKERS} is expanded.
+CMD ["sh", "-c", "bash scripts/prestart.sh && fastapi run --workers ${FASTAPI_WORKERS:-4} app/main.py"]

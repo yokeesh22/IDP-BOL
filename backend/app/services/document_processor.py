@@ -6,7 +6,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlmodel import Session, select
+from sqlalchemy import update
+from sqlmodel import Session, col, select
 
 from app.core.config import settings
 from app.core.db import engine
@@ -120,16 +121,13 @@ def analyze_with_form_recognizer(pdf_bytes: bytes) -> dict[str, Any]:
 
 
 def _process_document_blocking(doc_id: uuid.UUID) -> None:
-    filename = ""
+    # The document was already atomically flipped to PROCESSING by `_claim_pending`
+    # before this function runs, so here we only need to read the filename.
     with Session(engine) as session:
         doc = session.get(Document, doc_id)
         if not doc:
             return
         filename = doc.filename
-        doc.status = DocumentStatus.PROCESSING
-        doc.error_message = None
-        session.add(doc)
-        session.commit()
 
     try:
         storage = get_storage()
@@ -201,14 +199,36 @@ def _process_document_blocking(doc_id: uuid.UUID) -> None:
 
 
 def _claim_pending(limit: int) -> list[uuid.UUID]:
+    """Atomically claim up to `limit` pending documents for this worker.
+
+    Every uvicorn worker process (and every replica) runs its own copy of the
+    document worker, so a plain ``SELECT ... WHERE status = 'pending'`` would let
+    two of them grab the same document and process (and bill) it twice. To make
+    the claim safe we flip each candidate ``pending -> processing`` with a
+    conditional ``UPDATE`` and only keep the rows this call actually changed:
+    since a row can satisfy ``status = 'pending'`` for exactly one such UPDATE,
+    only one worker wins each document. This is portable across SQL Server and
+    SQLite (no dialect-specific ``OUTPUT``/``RETURNING`` required).
+    """
+    claimed: list[uuid.UUID] = []
     with Session(engine) as session:
-        rows = session.exec(
+        candidate_ids = session.exec(
             select(Document.id)
             .where(Document.status == DocumentStatus.PENDING)
             .order_by(Document.created_at)  # type: ignore[arg-type]
             .limit(limit)
         ).all()
-        return list(rows)
+        for doc_id in candidate_ids:
+            result = session.execute(
+                update(Document)
+                .where(col(Document.id) == doc_id)
+                .where(col(Document.status) == DocumentStatus.PENDING)
+                .values(status=DocumentStatus.PROCESSING, error_message=None)
+            )
+            if result.rowcount == 1:
+                claimed.append(doc_id)
+        session.commit()
+    return claimed
 
 
 async def document_worker(stop_event: asyncio.Event) -> None:

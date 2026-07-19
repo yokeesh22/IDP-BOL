@@ -88,11 +88,14 @@ def get_document(
 
 
 @router.post("/upload", response_model=DocumentMeta)
-async def upload_document(
+def upload_document(
     session: SessionDep,
     current_user: CurrentUser,
     file: UploadFile = File(...),
 ) -> Any:
+    # Defined as a sync `def` (not `async`) so FastAPI runs it in the threadpool:
+    # the file read, the blocking blob upload, and the DB commit below would
+    # otherwise stall the event loop for every other request on this worker.
     if file.content_type not in {"application/pdf", "application/x-pdf"} and not (
         file.filename or ""
     ).lower().endswith(".pdf"):
@@ -104,7 +107,7 @@ async def upload_document(
     chunks: list[bytes] = []
     size = 0
     while True:
-        chunk = await file.read(1024 * 1024)
+        chunk = file.file.read(1024 * 1024)
         if not chunk:
             break
         chunks.append(chunk)

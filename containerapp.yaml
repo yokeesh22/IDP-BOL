@@ -47,14 +47,22 @@ properties:
       # ── Backend: FastAPI (not exposed; reached by nginx via localhost:8000) ──
       - name: backend
         image: REPLACE_ACR_NAME.azurecr.io/idp-bol-backend:v1
+        # Sizing note: total heavy work ≈ FASTAPI_WORKERS × PROCESSOR_CONCURRENCY
+        # concurrent PDF renders (PyMuPDF, CPU+RAM heavy). Tuned below for a
+        # 4 vCPU / 4 GiB backend: memory is the binding constraint, so use 2
+        # "wider" workers (2 app copies) × 2 = 4 concurrent renders (all cores).
         resources:
-          cpu: 1.0
-          memory: 2.0Gi
+          cpu: 4.0
+          memory: 4.0Gi
         env:
           - name: ENVIRONMENT
             value: production
           - name: PROJECT_NAME
             value: IDP-BOL
+          # Uvicorn worker processes. Each worker is a full app copy (memory) and
+          # runs its own background document worker (processing concurrency).
+          - name: FASTAPI_WORKERS
+            value: "2"
           # Set to your app URL after the first deploy (see guide Step 5).
           - name: FRONTEND_HOST
             value: REPLACE_APP_URL            # e.g. https://idp-bol.<random>.eastus2.azurecontainerapps.io
@@ -101,8 +109,11 @@ properties:
             value: uploads
           - name: PDF_RENDER_DPI
             value: "144"
+          # Per-worker background processing concurrency. Effective concurrency
+          # across the container is FASTAPI_WORKERS × PROCESSOR_CONCURRENCY
+          # (here 2 × 2 = 4 concurrent renders, sized for 4 vCPU / 4 GiB).
           - name: PROCESSOR_CONCURRENCY
-            value: "3"
+            value: "2"
 
       # ── Frontend: nginx serving the SPA + proxying /api to localhost:8000 ──
       - name: frontend
