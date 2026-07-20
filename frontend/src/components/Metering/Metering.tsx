@@ -7,7 +7,6 @@ import {
   Coins,
   DollarSign,
   Download,
-  FileText,
   Home,
   Loader2,
   ScanText,
@@ -425,14 +424,14 @@ export function Metering() {
           }
         />
         <KpiCard
-          icon={<FileText className="h-[18px] w-[18px]" />}
+          icon={<Coins className="h-[18px] w-[18px]" />}
           iconBg="#fff7ed"
           iconColor="#c2410c"
-          label="Documents metered"
-          value={m.docCount.toLocaleString()}
+          label="Avg cost / document"
+          value={formatMoney(avgCostPerDoc, currency)}
           sub={
             <span className="text-xs text-muted-foreground">
-              avg {formatMoney(avgCostPerDoc, currency)} / doc
+              {formatMoney(m.docCost, currency)} across documents
             </span>
           }
         />
