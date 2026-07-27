@@ -49,6 +49,10 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
+  // Monotonic counter used to version a page's image so preview caches refresh
+  // whenever the underlying capture changes (e.g. retake).
+  const revRef = useRef(0)
+  const nextRev = useCallback(() => ++revRef.current, [])
 
   const [view, setView] = useState<View>("camera")
   const [pages, setPages] = useState<ScanPage[]>([])
@@ -161,7 +165,7 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
     let cancelled = false
     ;(async () => {
       for (const page of pages) {
-        const key = `${page.id}:${page.rotation}:${filter}`
+        const key = `${page.id}:${page.rev}:${page.rotation}:${filter}`
         if (previews[key]) continue
         try {
           const url = await renderPagePreview(page, filter)
@@ -178,7 +182,7 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
   }, [pages, filter, previews])
 
   const previewFor = (page: ScanPage): string =>
-    previews[`${page.id}:${page.rotation}:${filter}`] ?? page.src
+    previews[`${page.id}:${page.rev}:${page.rotation}:${filter}`] ?? page.src
 
   // Keep the lightbox index valid as pages are deleted/reordered.
   useEffect(() => {
@@ -227,14 +231,19 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
 
     if (retakeId) {
       setPages((prev) =>
-        prev.map((p) => (p.id === retakeId ? { ...p, src, rotation: 0 } : p)),
+        prev.map((p) =>
+          p.id === retakeId ? { ...p, src, rotation: 0, rev: nextRev() } : p,
+        ),
       )
       setRetakeId(null)
       setView("review")
     } else {
-      setPages((prev) => [...prev, { id: newId(), src, rotation: 0 }])
+      setPages((prev) => [
+        ...prev,
+        { id: newId(), src, rotation: 0, rev: nextRev() },
+      ])
     }
-  }, [retakeId])
+  }, [retakeId, nextRev])
 
   const handleImport = useCallback(
     (files: FileList | null) => {
@@ -257,12 +266,17 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
             if (retakeId) {
               setPages((prev) =>
                 prev.map((p) =>
-                  p.id === retakeId ? { ...p, src, rotation: 0 } : p,
+                  p.id === retakeId
+                    ? { ...p, src, rotation: 0, rev: nextRev() }
+                    : p,
                 ),
               )
               setRetakeId(null)
             } else {
-              setPages((prev) => [...prev, { id: newId(), src, rotation: 0 }])
+              setPages((prev) => [
+                ...prev,
+                { id: newId(), src, rotation: 0, rev: nextRev() },
+              ])
             }
           }
           remaining -= 1
@@ -271,7 +285,7 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
         reader.readAsDataURL(file)
       })
     },
-    [retakeId],
+    [retakeId, nextRev],
   )
 
   const rotatePage = (id: string) =>

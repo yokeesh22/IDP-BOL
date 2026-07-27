@@ -13,6 +13,9 @@ export interface ScanPage {
   src: string
   /** Clockwise rotation applied on top of the original, in degrees. */
   rotation: number
+  /** Bumped whenever `src` is replaced (e.g. retake) so cached previews keyed
+   *  by the page can be invalidated even when id/rotation are unchanged. */
+  rev: number
 }
 
 export const SCAN_FILTERS: { value: ScanFilter; label: string }[] = [
