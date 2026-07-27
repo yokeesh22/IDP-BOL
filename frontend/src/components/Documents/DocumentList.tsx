@@ -388,10 +388,11 @@ export function DocumentList() {
           <button
             type="button"
             onClick={() => setReportOpen(true)}
-            className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-md border bg-card px-3.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+            aria-label="Download report"
+            title="Download report"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md border bg-card text-muted-foreground transition-colors hover:border-primary hover:text-primary"
           >
             <Download className="h-4 w-4" />
-            Download report
           </button>
           <button
             type="button"
