@@ -1,3 +1,4 @@
+from sqlalchemy import event
 from sqlmodel import Session, SQLModel, col, create_engine, func, select
 
 from app import crud
@@ -13,14 +14,30 @@ from app.models import (
     UserCreate,
 )
 
-# `pool_pre_ping` transparently recycles connections that Azure SQL has closed
-# after an idle period; `pool_recycle` proactively refreshes them well before
-# the server-side timeout.
-engine = create_engine(
-    settings.SQLALCHEMY_DATABASE_URI,
-    pool_pre_ping=True,
-    pool_recycle=1800,
-)
+if settings.use_azure_sql:
+    # `pool_pre_ping` transparently recycles connections that Azure SQL has
+    # closed after an idle period; `pool_recycle` proactively refreshes them
+    # well before the server-side timeout.
+    engine = create_engine(
+        settings.SQLALCHEMY_DATABASE_URI,
+        pool_pre_ping=True,
+        pool_recycle=1800,
+    )
+else:
+    # Local SQLite fallback. `check_same_thread=False` lets the connection be
+    # shared across FastAPI's worker threads.
+    engine = create_engine(
+        settings.SQLALCHEMY_DATABASE_URI,
+        connect_args={"check_same_thread": False},
+    )
+
+    # SQLite doesn't enforce foreign keys unless asked to per-connection; enable
+    # it so ON DELETE CASCADE / SET NULL behave like they do on Azure SQL.
+    @event.listens_for(engine, "connect")
+    def _enable_sqlite_fks(dbapi_connection, connection_record):  # type: ignore[no-untyped-def]
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 
 def init_db(session: Session) -> None:

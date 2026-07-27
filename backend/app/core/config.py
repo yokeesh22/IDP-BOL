@@ -51,18 +51,41 @@ class Settings(BaseSettings):
     PROJECT_NAME: str
     SENTRY_DSN: HttpUrl | None = None
 
-    # Azure SQL Database (SQL Server) connection settings.
-    AZURE_SQL_SERVER: str
-    AZURE_SQL_DATABASE: str
-    AZURE_SQL_USER: str
-    AZURE_SQL_PASSWORD: str
+    # Azure SQL Database (SQL Server) connection settings. When these are unset
+    # (e.g. commented out in .env for local development), the app falls back to a
+    # local SQLite database file (see SQLALCHEMY_DATABASE_URI below), mirroring
+    # the local-filesystem fallback used for Azure Blob Storage.
+    AZURE_SQL_SERVER: str = ""
+    AZURE_SQL_DATABASE: str = ""
+    AZURE_SQL_USER: str = ""
+    AZURE_SQL_PASSWORD: str = ""
     AZURE_SQL_PORT: int = 1433
     # ODBC driver installed on the host / in the backend image.
     AZURE_SQL_ODBC_DRIVER: str = "ODBC Driver 18 for SQL Server"
 
+    # Local SQLite database file used when Azure SQL is not configured. Relative
+    # paths resolve against the backend working directory (./backend).
+    SQLITE_DB_PATH: str = "local.db"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def use_azure_sql(self) -> bool:
+        return bool(
+            self.AZURE_SQL_SERVER
+            and self.AZURE_SQL_DATABASE
+            and self.AZURE_SQL_USER
+            and self.AZURE_SQL_PASSWORD
+        )
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def SQLALCHEMY_DATABASE_URI(self) -> str:
+        if not self.use_azure_sql:
+            # Local development fallback: a file-based SQLite database. Requires
+            # no external server or ODBC driver, so the app runs off-machine.
+            return URL.create(
+                "sqlite", database=self.SQLITE_DB_PATH
+            ).render_as_string(hide_password=False)
         # URL.create handles URL-encoding of special characters in the
         # password (e.g. `#`, `[`, `]`, `:`) so we never hand-escape it.
         return URL.create(
