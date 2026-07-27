@@ -8,6 +8,7 @@ import {
   FileText,
   Home,
   Loader2,
+  ScanLine,
   Search,
   Trash2,
   Upload,
@@ -15,6 +16,7 @@ import {
 import { useCallback, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { ReportDialog } from "@/components/Common/ReportDialog"
+import { ScanDialog } from "@/components/Documents/ScanDialog"
 import useAuth from "@/hooks/useAuth"
 import {
   type DocumentMeta,
@@ -200,6 +202,7 @@ export function DocumentList() {
   const [isDragging, setIsDragging] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [reportOpen, setReportOpen] = useState(false)
+  const [scanOpen, setScanOpen] = useState(false)
 
   const { data: documents = [], isLoading } = useQuery({
     queryKey: ["documents"],
@@ -264,6 +267,16 @@ export function DocumentList() {
       handleFiles(e.dataTransfer.files)
     },
     [handleFiles],
+  )
+
+  const handleScanComplete = useCallback(
+    (file: File) => {
+      uploadMutation.mutate(file)
+      toast.success("Scan uploaded", {
+        description: "Processing will begin in the background.",
+      })
+    },
+    [uploadMutation],
   )
 
   const filtered = useMemo(() => {
@@ -379,6 +392,14 @@ export function DocumentList() {
           >
             <Download className="h-4 w-4" />
             Download report
+          </button>
+          <button
+            type="button"
+            onClick={() => setScanOpen(true)}
+            className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-md border bg-card px-3.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+          >
+            <ScanLine className="h-4 w-4" />
+            Scan document
           </button>
           <button
             type="button"
@@ -679,6 +700,12 @@ export function DocumentList() {
         title="Download document report"
         description="Export the document library (filtered by upload date) as an Excel file."
         onGenerate={handleDownloadReport}
+      />
+
+      <ScanDialog
+        open={scanOpen}
+        onClose={() => setScanOpen(false)}
+        onComplete={handleScanComplete}
       />
     </div>
   )
