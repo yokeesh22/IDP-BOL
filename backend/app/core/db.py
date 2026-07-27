@@ -57,7 +57,56 @@ def init_db(session: Session) -> None:
         )
         user = crud.create_user(session=session, user_create=user_in)
 
+    seed_users(session)
+
     backfill_usage_records(session)
+
+
+# Default password assigned to every seeded user. They should change it on first
+# login. Kept as a module constant so it is easy to find and rotate.
+DEFAULT_SEED_PASSWORD = "steris@2026"
+
+# (full_name, email) for the users to provision on startup. All are seeded as
+# active superusers. Existing users (matched by email) are left untouched.
+SEED_USERS: list[tuple[str, str]] = [
+    ("Yokeesh", "Yokeesh_Srinivasan@steris.com"),
+    ("Rodolfo", "Rodolfo_Reopell@steris.com"),
+    ("Mitchell", "Mitchell_Dysart@steris.com"),
+    ("Abraham", "Abraham_Joseph@steris.com"),
+    ("Stella", "Stella_Beech@steris.com"),
+    ("Ed", "Ed_Pollock@steris.com"),
+    ("Naveen", "Naveen_Nanda@steris.com"),
+    ("Ali", "Ali_Rahimi@steris.com"),
+    ("Andy", "Andrew_Wolf@steris.com"),
+    ("Vincent", "Vincent_Cianciola@steris.com"),
+    ("Darlene", "Darlene_Almasy@steris.com"),
+    ("Michael", "Michael_Barlow@steris.com"),
+    ("Kevin", "Kevin_Toot@steris.com"),
+    ("Fiorina", "Scott_Fiorina@steris.com"),
+    ("Ronald", "Ronald_Nyegard@steris.com"),
+    ("Naushath", "Naushath_Raja@steris.com"),
+    ("prasana", "PrasanaVenkatesh_S@steris.com"),
+]
+
+
+def seed_users(session: Session) -> None:
+    """Provision the default set of superusers if they don't already exist.
+
+    Idempotent: users are matched by email, so re-running on every startup
+    won't create duplicates or overwrite existing accounts/passwords.
+    """
+    for full_name, email in SEED_USERS:
+        existing = session.exec(select(User).where(User.email == email)).first()
+        if existing:
+            continue
+        user_in = UserCreate(
+            email=email,
+            password=DEFAULT_SEED_PASSWORD,
+            full_name=full_name,
+            is_superuser=True,
+            is_active=True,
+        )
+        crud.create_user(session=session, user_create=user_in)
 
 
 def backfill_usage_records(session: Session) -> None:
