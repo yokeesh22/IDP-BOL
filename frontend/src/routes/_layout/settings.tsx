@@ -28,7 +28,7 @@ function UserSettings() {
   }
 
   return (
-    <div className="mx-auto max-w-[1100px] px-7 pb-14 pt-7">
+    <div className="mx-auto max-w-[1100px] px-4 pb-14 pt-7 sm:px-6 lg:px-7">
       <div className="mb-5">
         <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
           <Home className="h-3 w-3" />

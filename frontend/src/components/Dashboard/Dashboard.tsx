@@ -436,7 +436,7 @@ export function Dashboard() {
 
   if (isLoading) {
     return (
-      <div className="mx-auto flex max-w-[1300px] items-center justify-center px-7 py-32">
+      <div className="mx-auto flex max-w-[1300px] items-center justify-center px-4 py-32 sm:px-6 lg:px-7">
         <Loader2 className="mr-2 h-5 w-5 animate-spin text-muted-foreground" />
         <span className="text-sm text-muted-foreground">
           Loading dashboard…
@@ -446,9 +446,9 @@ export function Dashboard() {
   }
 
   return (
-    <div className="mx-auto max-w-[1300px] px-7 pb-14 pt-7">
+    <div className="mx-auto max-w-[1300px] px-4 pb-14 pt-7 sm:px-6 lg:px-7">
       {/* Header */}
-      <div className="mb-5 flex items-start justify-between">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
             <Home className="h-3 w-3" />

@@ -49,7 +49,7 @@ export function TopAppBar({ center, hideNav }: TopAppBarProps) {
 
   return (
     <header
-      className="sticky top-0 z-40 flex h-14 items-center px-5"
+      className="sticky top-0 z-40 flex h-14 items-center px-3 sm:px-5"
       style={{
         background: "#ffffff",
         borderBottom: "1px solid #e2e8f0",
@@ -66,18 +66,21 @@ export function TopAppBar({ center, hideNav }: TopAppBarProps) {
           />
         </div>
         <div
-          className="h-5 w-px flex-shrink-0"
+          className="hidden h-5 w-px flex-shrink-0 lg:block"
           style={{ background: "#e2e8f0" }}
         />
-        <span style={{
-          fontSize: 12,
-          fontWeight: 700,
-          letterSpacing: "0.13em",
-          color: "#7488a0",
-          textTransform: "uppercase",
-          whiteSpace: "nowrap",
-          userSelect: "none",
-        }}>
+        <span
+          className="hidden lg:inline"
+          style={{
+            fontSize: 12,
+            fontWeight: 700,
+            letterSpacing: "0.13em",
+            color: "#7488a0",
+            textTransform: "uppercase",
+            whiteSpace: "nowrap",
+            userSelect: "none",
+          }}
+        >
           Document Intelligence
         </span>
       </Link>

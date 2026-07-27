@@ -360,7 +360,7 @@ export function DocumentList() {
 
   return (
     <div
-      className="mx-auto max-w-[1300px] px-7 pb-14 pt-7"
+      className="mx-auto max-w-[1300px] px-4 pb-14 pt-7 sm:px-6 lg:px-7"
       onDragOver={(e) => {
         e.preventDefault()
         setIsDragging(true)
@@ -369,7 +369,7 @@ export function DocumentList() {
       onDrop={handleDrop}
     >
       {/* Header */}
-      <div className="mb-5 flex items-start justify-between">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
             <Home className="h-3 w-3" />
@@ -431,10 +431,10 @@ export function DocumentList() {
 
       {/* Toolbar */}
       <div
-        className="mb-3.5 flex items-center gap-2.5 rounded-[13px] border bg-card px-3.5 py-2.5"
+        className="mb-3.5 flex flex-wrap items-center gap-2.5 rounded-[13px] border bg-card px-3.5 py-2.5"
         style={{ boxShadow: "0 1px 3px rgba(14,21,32,0.07)" }}
       >
-        <div className="relative w-[280px] flex-shrink-0">
+        <div className="relative w-full flex-shrink-0 sm:w-[280px]">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-[15px] w-[15px] -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
@@ -447,7 +447,7 @@ export function DocumentList() {
             className="h-9 w-full rounded-md border bg-secondary px-3 pl-[33px] text-[13px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:bg-card"
           />
         </div>
-        <div className="h-[22px] w-px flex-shrink-0 bg-border" />
+        <div className="hidden h-[22px] w-px flex-shrink-0 bg-border sm:block" />
         <select
           value={statusFilter}
           onChange={(e) => {

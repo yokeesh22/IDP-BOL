@@ -51,8 +51,8 @@ function UsersTable() {
 
 function Admin() {
   return (
-    <div className="mx-auto max-w-[1300px] px-7 pb-14 pt-7">
-      <div className="mb-5 flex items-start justify-between">
+    <div className="mx-auto max-w-[1300px] px-4 pb-14 pt-7 sm:px-6 lg:px-7">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
             <Home className="h-3 w-3" />

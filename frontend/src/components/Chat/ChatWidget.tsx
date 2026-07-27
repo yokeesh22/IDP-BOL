@@ -135,13 +135,13 @@ export function ChatWidget() {
   }
 
   return (
-    <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-3">
+    <div className="fixed bottom-5 right-5 z-50 flex max-w-[calc(100vw-2.5rem)] flex-col items-end gap-3">
       {open && (
         <div
           className="flex flex-col overflow-hidden rounded-2xl border shadow-2xl"
           style={{
-            width: 380,
-            height: 560,
+            width: "min(380px, calc(100vw - 2.5rem))",
+            height: "min(560px, calc(100vh - 7.5rem))",
             background: "#ffffff",
             borderColor: "#e2e8f0",
           }}

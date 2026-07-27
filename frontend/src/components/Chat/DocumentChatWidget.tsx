@@ -138,11 +138,16 @@ export function DocumentChatWidget({ documentId, documentName }: DocumentChatWid
   const shortName = documentName.length > 22 ? `${documentName.slice(0, 22)}…` : documentName
 
   return (
-    <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-3">
+    <div className="fixed bottom-5 right-5 z-50 flex max-w-[calc(100vw-2.5rem)] flex-col items-end gap-3">
       {open && (
         <div
           className="flex flex-col overflow-hidden rounded-2xl border shadow-2xl"
-          style={{ width: 400, height: 580, background: "#ffffff", borderColor: "#e2e8f0" }}
+          style={{
+            width: "min(400px, calc(100vw - 2.5rem))",
+            height: "min(580px, calc(100vh - 7.5rem))",
+            background: "#ffffff",
+            borderColor: "#e2e8f0",
+          }}
         >
           {/* Header */}
           <div

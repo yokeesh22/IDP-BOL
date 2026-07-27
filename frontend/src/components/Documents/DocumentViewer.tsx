@@ -107,6 +107,21 @@ export function DocumentViewer({ docId }: { docId: string }) {
   const imageRef = useRef<HTMLImageElement>(null)
   const [naturalImgW, setNaturalImgW] = useState(0)
 
+  // Side-by-side panes + connector lines are a desktop/landscape affordance.
+  // Below this width (portrait tablets and phones) the panes stack vertically
+  // and the connector overlay is disabled since it can't span stacked panes.
+  const [isWideLayout, setIsWideLayout] = useState(() =>
+    typeof window === "undefined"
+      ? true
+      : window.matchMedia("(min-width: 1024px)").matches,
+  )
+  useEffect(() => {
+    const mql = window.matchMedia("(min-width: 1024px)")
+    const onChange = () => setIsWideLayout(mql.matches)
+    mql.addEventListener("change", onChange)
+    return () => mql.removeEventListener("change", onChange)
+  }, [])
+
   // Pages are rendered at 144 DPI (2× CSS baseline). At 100% zoom the displayed
   // width is naturalWidth / 2, keeping pixel density correct on standard screens.
   const renderedWidth = naturalImgW > 0 ? (naturalImgW / 2) * (ZOOM_LEVELS[zoomIdx] / 100) : 0
@@ -317,17 +332,17 @@ export function DocumentViewer({ docId }: { docId: string }) {
 
   return (
     <Shell>
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b bg-card px-3">
+      <div className="flex h-12 shrink-0 items-center gap-2 overflow-x-auto border-b bg-card px-3">
         <button
           type="button"
           onClick={() => navigate({ to: "/documents" })}
           title="Back to documents"
-          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
 
-        <div className="h-5 w-px bg-border" />
+        <div className="h-5 w-px shrink-0 bg-border" />
 
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <FileText className="h-3.5 w-3.5 shrink-0 text-primary/70" />
@@ -335,7 +350,7 @@ export function DocumentViewer({ docId }: { docId: string }) {
           <ReviewBadge reviewStatus={doc.review_status} />
         </div>
 
-        <div className="h-5 w-px bg-border" />
+        <div className="h-5 w-px shrink-0 bg-border" />
 
         <TbBtn disabled={currentPage <= 1} onClick={() => { setCurrentPage((p) => Math.max(1, p - 1)); setHighlight(null) }} aria-label="Previous page">
           <ChevronLeft className="h-4 w-4" />
@@ -345,21 +360,21 @@ export function DocumentViewer({ docId }: { docId: string }) {
           inputMode="numeric"
           value={currentPage}
           onChange={(e) => { const n = Number.parseInt(e.target.value, 10); if (n >= 1 && n <= pageCount) setCurrentPage(n) }}
-          className="h-7 w-10 rounded border bg-secondary text-center text-xs outline-none focus:border-primary"
+          className="h-7 w-10 shrink-0 rounded border bg-secondary text-center text-xs outline-none focus:border-primary"
           style={{ fontFamily: '"DM Mono", monospace' }}
         />
-        <span className="text-xs text-muted-foreground" style={{ fontFamily: '"DM Mono", monospace' }}>/ {pageCount}</span>
+        <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground" style={{ fontFamily: '"DM Mono", monospace' }}>/ {pageCount}</span>
         <TbBtn disabled={currentPage >= pageCount} onClick={() => { setCurrentPage((p) => Math.min(pageCount, p + 1)); setHighlight(null) }} aria-label="Next page">
           <ChevronRight className="h-4 w-4" />
         </TbBtn>
 
-        <div className="h-5 w-px bg-border" />
+        <div className="h-5 w-px shrink-0 bg-border" />
 
         <TbBtn onClick={zoomOut} disabled={zoomIdx === 0} aria-label="Zoom out"><ZoomOut className="h-4 w-4" /></TbBtn>
         <select
           value={ZOOM_LEVELS[zoomIdx]}
           onChange={(e) => setZoomIdx(ZOOM_LEVELS.indexOf(Number(e.target.value) as (typeof ZOOM_LEVELS)[number]))}
-          className="h-7 cursor-pointer rounded border bg-secondary px-1.5 text-xs text-muted-foreground outline-none focus:border-primary"
+          className="h-7 shrink-0 cursor-pointer rounded border bg-secondary px-1.5 text-xs text-muted-foreground outline-none focus:border-primary"
         >
           {ZOOM_LEVELS.map((z) => <option key={z} value={z}>{z}%</option>)}
         </select>
@@ -367,18 +382,19 @@ export function DocumentViewer({ docId }: { docId: string }) {
         <TbBtn onClick={fitWidth} aria-label="Fit to width"><Maximize2 className="h-4 w-4" /></TbBtn>
         <TbBtn onClick={rotatePage} aria-label="Rotate page 90° clockwise" title="Rotate 90° clockwise"><RotateCw className="h-4 w-4" /></TbBtn>
 
-        <div className="h-5 w-px bg-border" />
+        <div className="h-5 w-px shrink-0 bg-border" />
 
         <button
           type="button"
           onClick={downloadFile}
-          className="flex h-7 items-center gap-1.5 rounded border bg-card px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:bg-accent hover:text-primary"
+          title="Download"
+          className="flex h-7 shrink-0 items-center gap-1.5 rounded border bg-card px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:bg-accent hover:text-primary"
         >
           <Download className="h-3.5 w-3.5" />
-          Download
+          <span className="hidden lg:inline">Download</span>
         </button>
 
-        <div className="h-5 w-px bg-border" />
+        <div className="h-5 w-px shrink-0 bg-border" />
 
         {(() => {
           const reviewed = doc.review_status !== null
@@ -398,7 +414,7 @@ export function DocumentViewer({ docId }: { docId: string }) {
                       : "Approve document"
                 }
                 className={cn(
-                  "flex h-7 items-center gap-1.5 rounded border px-2.5 text-xs font-semibold transition-colors",
+                  "flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded border px-2.5 text-xs font-semibold transition-colors",
                   isApproved
                     ? "border-emerald-500 bg-emerald-50 text-emerald-700 cursor-default"
                     : reviewed
@@ -421,7 +437,7 @@ export function DocumentViewer({ docId }: { docId: string }) {
                       : "Reject document"
                 }
                 className={cn(
-                  "flex h-7 items-center gap-1.5 rounded border px-2.5 text-xs font-semibold transition-colors",
+                  "flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded border px-2.5 text-xs font-semibold transition-colors",
                   isRejected
                     ? "border-red-500 bg-red-50 text-red-700 cursor-default"
                     : reviewed
@@ -437,8 +453,14 @@ export function DocumentViewer({ docId }: { docId: string }) {
         })()}
       </div>
 
-      <div ref={layoutRef} className="relative flex flex-1 overflow-hidden">
-        <div className="flex w-1/2 flex-col border-r" style={{ background: "#f7f4f4" }}>
+      <div
+        ref={layoutRef}
+        className="relative flex flex-1 flex-col overflow-hidden lg:flex-row"
+      >
+        <div
+          className="flex min-h-0 min-w-0 flex-1 basis-0 flex-col border-b lg:border-b-0 lg:border-r"
+          style={{ background: "#f7f4f4" }}
+        >
           <div ref={pdfScrollRef} className="pdf-scroll flex-1 overflow-auto px-5 py-6">
             {currentImage ? (
               (() => {
@@ -501,7 +523,7 @@ export function DocumentViewer({ docId }: { docId: string }) {
           </div>
         </div>
 
-        <div className="flex w-1/2 flex-col overflow-hidden bg-card">
+        <div className="flex min-h-0 min-w-0 flex-1 basis-0 flex-col overflow-hidden bg-card">
           <div className="flex shrink-0 border-b bg-secondary">
             <TabBtn active={activeTab === "kv"} onClick={() => { setActiveTab("kv"); setFilter(""); setHighlight(null) }} count={kvPairs.length}>
               <KvIcon /> Key–Value Pairs
@@ -550,7 +572,7 @@ export function DocumentViewer({ docId }: { docId: string }) {
           )}
         </div>
 
-        {highlight && layoutRef.current && imageRef.current && (
+        {isWideLayout && highlight && layoutRef.current && imageRef.current && (
           <ConnectorLine
             layoutEl={layoutRef.current}
             imageEl={imageRef.current}
@@ -663,7 +685,7 @@ function TbBtn({ children, ...rest }: React.ButtonHTMLAttributes<HTMLButtonEleme
     <button
       type="button"
       {...rest}
-      className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
     >
       {children}
     </button>
