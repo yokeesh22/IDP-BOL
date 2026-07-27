@@ -132,7 +132,21 @@ def _process_document_blocking(doc_id: uuid.UUID) -> None:
     try:
         storage = get_storage()
         if not storage.exists(filename):
-            raise FileNotFoundError(f"PDF missing from storage: {filename}")
+            backend = (
+                "Azure Blob Storage"
+                if settings.use_blob_storage
+                else f"local disk (UPLOAD_DIR={settings.UPLOAD_DIR!r})"
+            )
+            raise FileNotFoundError(
+                f"PDF missing from storage backend [{backend}]: {filename}. "
+                "The uploaded file could not be found by the processing worker. "
+                "This happens when the instance that received the upload and the "
+                "worker that processes it do not share the same storage — e.g. "
+                "local disk across multiple backend replicas/containers, or "
+                "ephemeral container storage. Configure Azure Blob Storage "
+                "(AZURE_STORAGE_CONTAINER_URL + AZURE_STORAGE_SAS_TOKEN) so every "
+                "instance reads and writes the same shared store."
+            )
 
         pdf_bytes = storage.read_bytes(filename)
         page_count = convert_pdf_to_images(pdf_bytes, doc_id)

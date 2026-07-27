@@ -3,9 +3,12 @@ import {
   ArrowRight,
   Camera,
   Check,
+  ChevronLeft,
+  ChevronRight,
   FileText,
   ImageIcon,
   Loader2,
+  Maximize2,
   Plus,
   RefreshCw,
   RotateCw,
@@ -60,11 +63,13 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
   const [building, setBuilding] = useState(false)
   const [previews, setPreviews] = useState<Record<string, string>>({})
   const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
 
   const stopCamera = useCallback(() => {
     const stream = streamRef.current
     if (stream) {
-      stream.getTracks().forEach((t) => t.stop())
+      for (const t of stream.getTracks()) t.stop()
       streamRef.current = null
     }
     if (videoRef.current) videoRef.current.srcObject = null
@@ -136,6 +141,8 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
       setBuilding(false)
       setPreviews({})
       setCameraError(null)
+      setLightboxIndex(null)
+      setLightboxUrl(null)
     }
   }, [open])
 
@@ -172,6 +179,40 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
 
   const previewFor = (page: ScanPage): string =>
     previews[`${page.id}:${page.rotation}:${filter}`] ?? page.src
+
+  // Keep the lightbox index valid as pages are deleted/reordered.
+  useEffect(() => {
+    if (lightboxIndex === null) return
+    if (pages.length === 0) {
+      setLightboxIndex(null)
+    } else if (lightboxIndex > pages.length - 1) {
+      setLightboxIndex(pages.length - 1)
+    }
+  }, [pages.length, lightboxIndex])
+
+  // Render a high-resolution version for the open lightbox so the user can
+  // actually inspect the scan (rotation + filter baked in, matching the PDF).
+  useEffect(() => {
+    if (lightboxIndex === null) {
+      setLightboxUrl(null)
+      return
+    }
+    const page = pages[lightboxIndex]
+    if (!page) return
+    let cancelled = false
+    setLightboxUrl(null)
+    ;(async () => {
+      try {
+        const url = await renderPagePreview(page, filter, 1600)
+        if (!cancelled) setLightboxUrl(url)
+      } catch {
+        if (!cancelled) setLightboxUrl(page.src)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [lightboxIndex, pages, filter])
 
   const capture = useCallback(() => {
     const video = videoRef.current
@@ -282,15 +323,25 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
     }
   }, [pages, filter, onComplete, onClose])
 
-  // Close on Escape.
+  // Keyboard: Escape closes the lightbox (or the dialog); arrows page through
+  // the enlarged preview.
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose()
+      if (e.key === "Escape") {
+        if (lightboxIndex !== null) setLightboxIndex(null)
+        else onClose()
+      } else if (lightboxIndex !== null && e.key === "ArrowRight") {
+        setLightboxIndex((i) =>
+          i === null ? i : Math.min(pages.length - 1, i + 1),
+        )
+      } else if (lightboxIndex !== null && e.key === "ArrowLeft") {
+        setLightboxIndex((i) => (i === null ? i : Math.max(0, i - 1)))
+      }
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [open, onClose])
+  }, [open, onClose, lightboxIndex, pages.length])
 
   if (!open) return null
 
@@ -349,6 +400,7 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
           onDelete={deletePage}
           onMove={movePage}
           onRetake={startRetake}
+          onOpenPage={setLightboxIndex}
           onFinalize={finalize}
           onDragStart={setDragIndex}
           onDragEnd={() => setDragIndex(null)}
@@ -356,6 +408,26 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
             if (dragIndex !== null) reorder(dragIndex, to)
             setDragIndex(null)
           }}
+        />
+      )}
+
+      {lightboxIndex !== null && pages[lightboxIndex] && (
+        <Lightbox
+          url={lightboxUrl}
+          index={lightboxIndex}
+          total={pages.length}
+          onClose={() => setLightboxIndex(null)}
+          onPrev={() => setLightboxIndex((i) => Math.max(0, (i ?? 0) - 1))}
+          onNext={() =>
+            setLightboxIndex((i) => Math.min(pages.length - 1, (i ?? 0) + 1))
+          }
+          onRotate={() => rotatePage(pages[lightboxIndex].id)}
+          onRetake={() => {
+            const id = pages[lightboxIndex].id
+            setLightboxIndex(null)
+            startRetake(id)
+          }}
+          onDelete={() => deletePage(pages[lightboxIndex].id)}
         />
       )}
     </div>
@@ -451,7 +523,6 @@ function CameraView({
           </div>
         ) : (
           <>
-            {/* biome-ignore lint/a11y/useMediaCaption: live camera preview has no captions */}
             <video
               ref={videoRef}
               playsInline
@@ -544,6 +615,7 @@ interface ReviewViewProps {
   onDelete: (id: string) => void
   onMove: (index: number, dir: -1 | 1) => void
   onRetake: (id: string) => void
+  onOpenPage: (index: number) => void
   onFinalize: () => void
   onDragStart: (index: number) => void
   onDragEnd: () => void
@@ -564,6 +636,7 @@ function ReviewView({
   onDelete,
   onMove,
   onRetake,
+  onOpenPage,
   onFinalize,
   onDragStart,
   onDragEnd,
@@ -628,6 +701,7 @@ function ReviewView({
         ) : (
           <div className="mx-auto grid max-w-5xl grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {pages.map((page, index) => (
+              // biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop reordering surface; page actions have dedicated buttons
               <div
                 key={page.id}
                 draggable
@@ -647,8 +721,13 @@ function ReviewView({
                   {index + 1}
                 </span>
 
-                {/* Preview */}
-                <div className="flex aspect-[3/4] items-center justify-center overflow-hidden bg-neutral-50">
+                {/* Preview (click to enlarge) */}
+                <button
+                  type="button"
+                  onClick={() => onOpenPage(index)}
+                  title="Click to enlarge"
+                  className="group/preview relative flex aspect-[3/4] items-center justify-center overflow-hidden bg-neutral-50"
+                >
                   <img
                     src={previewFor(page)}
                     alt={`Page ${index + 1}`}
@@ -656,7 +735,13 @@ function ReviewView({
                     style={{ filter: cssFilterFor(filter) }}
                     draggable={false}
                   />
-                </div>
+                  <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-neutral-900/0 opacity-0 transition-all group-hover/preview:bg-neutral-900/30 group-hover/preview:opacity-100">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-white/95 px-3 py-1.5 text-xs font-medium text-neutral-800 shadow">
+                      <Maximize2 className="h-3.5 w-3.5" />
+                      Enlarge
+                    </span>
+                  </span>
+                </button>
 
                 {/* Controls */}
                 <div className="flex items-center justify-between gap-1 border-t bg-white px-1.5 py-1.5">
@@ -768,6 +853,130 @@ function IconBtn({
       className={cn(
         "inline-flex h-7 w-7 items-center justify-center rounded-md text-neutral-500 transition-colors hover:bg-neutral-100 disabled:opacity-30 disabled:hover:bg-transparent",
         danger && "hover:bg-red-50 hover:text-red-600",
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+// ── Lightbox (enlarged page preview) ──────────────────────────────────────────
+
+interface LightboxProps {
+  url: string | null
+  index: number
+  total: number
+  onClose: () => void
+  onPrev: () => void
+  onNext: () => void
+  onRotate: () => void
+  onRetake: () => void
+  onDelete: () => void
+}
+
+function Lightbox({
+  url,
+  index,
+  total,
+  onClose,
+  onPrev,
+  onNext,
+  onRotate,
+  onRetake,
+  onDelete,
+}: LightboxProps) {
+  return (
+    <div className="absolute inset-0 z-[70] flex flex-col bg-neutral-950/95 backdrop-blur-sm">
+      {/* Click-away backdrop (behind the content). */}
+      <button
+        type="button"
+        aria-label="Close preview"
+        onClick={onClose}
+        className="absolute inset-0 z-0 cursor-default"
+      />
+
+      {/* Top bar */}
+      <div className="relative z-10 flex items-center justify-between px-4 py-3 text-white">
+        <span className="text-sm font-medium">
+          Page {index + 1} of {total}
+        </span>
+        <div className="flex items-center gap-1">
+          <LightboxBtn label="Rotate" onClick={onRotate}>
+            <RotateCw className="h-5 w-5" />
+          </LightboxBtn>
+          <LightboxBtn label="Retake" onClick={onRetake}>
+            <RefreshCw className="h-5 w-5" />
+          </LightboxBtn>
+          <LightboxBtn label="Delete" onClick={onDelete} danger>
+            <Trash2 className="h-5 w-5" />
+          </LightboxBtn>
+          <LightboxBtn label="Close" onClick={onClose}>
+            <X className="h-5 w-5" />
+          </LightboxBtn>
+        </div>
+      </div>
+
+      {/* Stage */}
+      <div className="pointer-events-none relative z-10 flex flex-1 items-center justify-center overflow-hidden px-4 pb-6">
+        {index > 0 && (
+          <button
+            type="button"
+            onClick={onPrev}
+            className="pointer-events-auto absolute left-3 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+            aria-label="Previous page"
+          >
+            <ChevronLeft className="h-6 w-6" />
+          </button>
+        )}
+
+        {url ? (
+          <img
+            src={url}
+            alt={`Page ${index + 1}`}
+            className="max-h-full max-w-full object-contain shadow-2xl"
+          />
+        ) : (
+          <Loader2 className="h-8 w-8 animate-spin text-white/70" />
+        )}
+
+        {index < total - 1 && (
+          <button
+            type="button"
+            onClick={onNext}
+            className="pointer-events-auto absolute right-3 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+            aria-label="Next page"
+          >
+            <ChevronRight className="h-6 w-6" />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function LightboxBtn({
+  children,
+  label,
+  onClick,
+  danger,
+}: {
+  children: React.ReactNode
+  label: string
+  onClick: () => void
+  danger?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+      aria-label={label}
+      title={label}
+      className={cn(
+        "inline-flex h-10 w-10 items-center justify-center rounded-full text-white transition-colors hover:bg-white/15",
+        danger && "hover:bg-red-500/30 hover:text-red-300",
       )}
     >
       {children}
