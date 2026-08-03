@@ -266,6 +266,17 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
     setView("camera")
   }, [])
 
+  // Closing the camera view (reached via "Add page" or "Retake") should go back
+  // to review when pages already exist, instead of discarding the whole scan.
+  const handleCameraClose = useCallback(() => {
+    if (pages.length > 0) {
+      setRetakeId(null)
+      setView("review")
+    } else {
+      onClose()
+    }
+  }, [pages.length, onClose])
+
   const handleImport = useCallback(
     (files: FileList | null) => {
       if (!files || files.length === 0) return
@@ -366,6 +377,7 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
       if (e.key === "Escape") {
         if (lightboxIndex !== null) setLightboxIndex(null)
         else if (view === "crop") cancelCrop()
+        else if (view === "camera") handleCameraClose()
         else onClose()
       } else if (lightboxIndex !== null && e.key === "ArrowRight") {
         setLightboxIndex((i) =>
@@ -377,7 +389,15 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [open, onClose, lightboxIndex, pages.length, view, cancelCrop])
+  }, [
+    open,
+    onClose,
+    lightboxIndex,
+    pages.length,
+    view,
+    cancelCrop,
+    handleCameraClose,
+  ])
 
   if (!open) return null
 
@@ -413,7 +433,7 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
           lastPreview={
             pages.length ? previewFor(pages[pages.length - 1]) : null
           }
-          onClose={onClose}
+          onClose={handleCameraClose}
           onCapture={capture}
           onSwitchCamera={() =>
             setFacingMode((m) => (m === "environment" ? "user" : "environment"))
