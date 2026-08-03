@@ -1,0 +1,94 @@
+# Standalone LOCAL compose. Run on its own:
+#
+#   docker compose -f compose.local.yml up --build
+#
+# Two things make this "local":
+#
+# 1. The frontend is built with VITE_API_URL=http://localhost:8000, so the SPA
+#    calls the local backend DIRECTLY and bypasses the nginx reverse proxy — the
+#    hardcoded prod backend (billofladinguatapi.steris.com) is never hit. A
+#    static-only nginx.local.conf is mounted so nginx starts (the prod config's
+#    dead upstream would otherwise make it fail to boot).
+#
+# 2. The AZURE_SQL_* / AZURE_STORAGE_* vars are forced EMPTY below (overriding
+#    backend/.env), so the backend uses a local SQLite file + local uploads
+#    folder — you never have to comment/uncomment those blocks in .env. Unlike a
+#    shared Azure SQL DB, the SQLite file is NOT shared between containers, so the
+#    schema must be created INSIDE the backend container. Hence the backend runs
+#    prestart itself (no separate prestart service), and the DB lives on a named
+#    volume so it survives restarts.
+#
+# Plain `docker compose up` (compose.yml) is unaffected and still routes through
+# nginx exactly like production.
+services:
+
+  backend:
+    restart: "no"
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    # Create schema + seed users in THIS container's SQLite DB, then serve.
+    command: sh -c "bash scripts/prestart.sh && fastapi run --reload app/main.py"
+    env_file:
+      - ./backend/.env
+    environment:
+      # Force LOCAL mode regardless of what's in backend/.env. These override the
+      # env_file values above; empty => the backend's use_azure_sql /
+      # use_blob_storage checks evaluate false, so it falls back to SQLite + the
+      # local uploads folder. This means you NEVER have to comment/uncomment the
+      # AZURE_SQL_* / AZURE_STORAGE_* blocks in .env to switch between local and
+      # prod — just pick the compose file.
+      - AZURE_SQL_SERVER=
+      - AZURE_SQL_DATABASE=
+      - AZURE_SQL_USER=
+      - AZURE_SQL_PASSWORD=
+      - AZURE_STORAGE_CONTAINER_URL=
+      - AZURE_STORAGE_SAS_TOKEN=
+      # Put the SQLite file on the persistent volume mounted below (overrides
+      # the default ./backend/local.db, which would be ephemeral).
+      - SQLITE_DB_PATH=/app/backend/data/local.db
+    volumes:
+      - app-uploads:/app/backend/uploads
+      - app-db:/app/backend/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/utils/health-check/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    develop:
+      watch:
+        - path: ./backend
+          action: sync
+          target: /app/backend
+          ignore:
+            - ./backend/.venv
+            - .venv
+            # Don't sync .env into the container: pydantic would read it as a
+            # dotenv source and could override the empty AZURE_* vars set above.
+            - ./backend/.env
+        - path: ./backend/pyproject.toml
+          action: rebuild
+
+  frontend:
+    restart: "no"
+    depends_on:
+      - backend
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        # Talk to the local backend directly => bypasses the nginx proxy.
+        - VITE_API_URL=http://localhost:8000
+        - NODE_ENV=development
+    # Replace the prod nginx config (which hardcodes proxy_pass to the steris
+    # backend and makes nginx fail to start locally) with a static-only config.
+    volumes:
+      - ./frontend/nginx.local.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "5173:80"
+
+volumes:
+  app-uploads:
+  app-db:

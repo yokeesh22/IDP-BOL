@@ -49,7 +49,9 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
       args:
-        - VITE_API_URL=http://localhost:8000
+        # No VITE_API_URL => SPA uses relative /api and goes THROUGH nginx
+        # (the hardcoded prod backend), mirroring production. To hit a local
+        # backend instead, layer compose.local.yml on top (see that file).
         - NODE_ENV=development
     ports:
       - "5173:80"
