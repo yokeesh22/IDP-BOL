@@ -1,5 +1,5 @@
 import { Link, useLocation } from "@tanstack/react-router"
-import { Bell, FileText, Gauge, LayoutDashboard, LogOut, Shield, User as UserIcon } from "lucide-react"
+import { FileText, Gauge, LayoutDashboard, LogOut, Shield, User as UserIcon } from "lucide-react"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 
 import useAuth from "@/hooks/useAuth"
@@ -101,16 +101,17 @@ export function TopAppBar({ center, hideNav }: TopAppBarProps) {
               <Link
                 key={item.path}
                 to={item.path}
+                title={item.title}
                 style={{ display: "flex", alignItems: "center" }}
                 className={cn(
-                  "gap-1.5 rounded-md px-3.5 py-1.5 text-[13.5px] font-medium leading-none transition-colors",
+                  "gap-1.5 rounded-md px-2.5 py-1.5 text-[13.5px] font-medium leading-none transition-colors sm:px-3.5",
                   active
                     ? "bg-[#eff6ff] text-[#016ac9]"
                     : "text-[#4a5a6e] hover:bg-[#f0f4f8] hover:text-[#0e1a2b]",
                 )}
               >
                 <Icon className="h-4 w-4 shrink-0" style={{ display: "block" }} />
-                <span className="leading-none">{item.title}</span>
+                <span className="hidden leading-none sm:inline">{item.title}</span>
               </Link>
             )
           })}
@@ -118,6 +119,7 @@ export function TopAppBar({ center, hideNav }: TopAppBarProps) {
       )}
 
       <div className="flex items-center gap-1.5">
+        {/* Notifications — hidden for now (feature not in use)
         <IconBtn label="Notifications">
           <Bell className="h-[19px] w-[19px]" />
           <span
@@ -133,6 +135,7 @@ export function TopAppBar({ center, hideNav }: TopAppBarProps) {
           className="mx-1.5 h-6 w-px"
           style={{ background: "#e2e8f0" }}
         />
+        */}
 
         <div ref={wrapRef} className="relative ml-1.5">
           <button
@@ -195,23 +198,24 @@ export function TopAppBar({ center, hideNav }: TopAppBarProps) {
   )
 }
 
-function IconBtn({
-  children,
-  label,
-}: {
-  children: ReactNode
-  label: string
-}) {
-  return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      className="relative flex h-[34px] w-[34px] items-center justify-center rounded-md text-[#6b7a8d] transition-colors hover:bg-[#f0f4f8] hover:text-[#0e1a2b]"
-    >
-      {children}
-    </button>
-  )
-}
+// Used by the notifications button (currently disabled). Kept for when it returns.
+// function IconBtn({
+//   children,
+//   label,
+// }: {
+//   children: ReactNode
+//   label: string
+// }) {
+//   return (
+//     <button
+//       type="button"
+//       title={label}
+//       aria-label={label}
+//       className="relative flex h-[34px] w-[34px] items-center justify-center rounded-md text-[#6b7a8d] transition-colors hover:bg-[#f0f4f8] hover:text-[#0e1a2b]"
+//     >
+//       {children}
+//     </button>
+//   )
+// }
 
 export default TopAppBar

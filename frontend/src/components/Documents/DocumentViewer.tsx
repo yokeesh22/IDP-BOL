@@ -7,10 +7,12 @@ import {
   ChevronRight,
   Download,
   FileText,
+  List,
   Loader2,
   Maximize2,
   Pencil,
   RotateCw,
+  Rows2,
   Search,
   Table2,
   X,
@@ -55,6 +57,10 @@ import { cn } from "@/lib/utils"
 
 type ActiveTab = "kv" | "tables" | "bol"
 
+// Controls which pane(s) are visible when the layout is stacked (tablets/phones).
+// On desktop (lg+) both panes always show side-by-side, so this is ignored there.
+type PaneMode = "split" | "doc" | "fields"
+
 type HighlightState =
   | { type: "kv"; pairIndex: number; field: "key" | "value"; pageNumber: number; polygon: number[][]; confidence: number }
   | { type: "cell"; tableIndex: number; row: number; col: number; pageNumber: number; polygon: number[][]; confidence?: number }
@@ -98,6 +104,7 @@ export function DocumentViewer({ docId }: { docId: string }) {
   const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0)
   const [highlight, setHighlight] = useState<HighlightState | null>(null)
   const [activeTab, setActiveTab] = useState<ActiveTab>("kv")
+  const [paneMode, setPaneMode] = useState<PaneMode>("split")
   const [filter, setFilter] = useState("")
   const [editing, setEditing] = useState<EditTarget | null>(null)
   const [reviewDecision, setReviewDecision] = useState<ReviewStatus | null>(null)
@@ -344,10 +351,12 @@ export function DocumentViewer({ docId }: { docId: string }) {
 
         <div className="h-5 w-px shrink-0 bg-border" />
 
-        <div className="flex min-w-0 flex-1 items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
           <FileText className="h-3.5 w-3.5 shrink-0 text-primary/70" />
-          <span className="truncate text-[13px] font-semibold">{doc.original_filename}</span>
-          <ReviewBadge reviewStatus={doc.review_status} />
+          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{doc.original_filename}</span>
+          <span className="shrink-0">
+            <ReviewBadge reviewStatus={doc.review_status} />
+          </span>
         </div>
 
         <div className="h-5 w-px shrink-0 bg-border" />
@@ -394,6 +403,11 @@ export function DocumentViewer({ docId }: { docId: string }) {
           <span className="hidden lg:inline">Download</span>
         </button>
 
+        <div className="h-5 w-px shrink-0 bg-border lg:hidden" />
+        <div className="shrink-0 lg:hidden">
+          <PaneToggle mode={paneMode} onChange={setPaneMode} />
+        </div>
+
         <div className="h-5 w-px shrink-0 bg-border" />
 
         {(() => {
@@ -423,7 +437,7 @@ export function DocumentViewer({ docId }: { docId: string }) {
                 )}
               >
                 <Check className="h-3.5 w-3.5" />
-                {isApproved ? "Approved" : "Approve"}
+                <span className="hidden sm:inline">{isApproved ? "Approved" : "Approve"}</span>
               </button>
               <button
                 type="button"
@@ -446,7 +460,7 @@ export function DocumentViewer({ docId }: { docId: string }) {
                 )}
               >
                 <X className="h-3.5 w-3.5" />
-                {isRejected ? "Rejected" : "Reject"}
+                <span className="hidden sm:inline">{isRejected ? "Rejected" : "Reject"}</span>
               </button>
             </>
           )
@@ -458,7 +472,10 @@ export function DocumentViewer({ docId }: { docId: string }) {
         className="relative flex flex-1 flex-col overflow-hidden lg:flex-row"
       >
         <div
-          className="flex min-h-0 min-w-0 flex-1 basis-0 flex-col border-b lg:border-b-0 lg:border-r"
+          className={cn(
+            "min-h-0 min-w-0 flex-1 basis-0 flex-col border-b lg:flex lg:border-b-0 lg:border-r",
+            paneMode === "fields" ? "hidden" : "flex",
+          )}
           style={{ background: "#f7f4f4" }}
         >
           <div ref={pdfScrollRef} className="pdf-scroll flex-1 overflow-auto px-5 py-6">
@@ -523,8 +540,13 @@ export function DocumentViewer({ docId }: { docId: string }) {
           </div>
         </div>
 
-        <div className="flex min-h-0 min-w-0 flex-1 basis-0 flex-col overflow-hidden bg-card">
-          <div className="flex shrink-0 border-b bg-secondary">
+        <div
+          className={cn(
+            "min-h-0 min-w-0 flex-1 basis-0 flex-col overflow-hidden bg-card lg:flex",
+            paneMode === "doc" ? "hidden" : "flex",
+          )}
+        >
+          <div className="flex shrink-0 overflow-x-auto border-b bg-secondary">
             <TabBtn active={activeTab === "kv"} onClick={() => { setActiveTab("kv"); setFilter(""); setHighlight(null) }} count={kvPairs.length}>
               <KvIcon /> Key–Value Pairs
             </TabBtn>
@@ -680,6 +702,42 @@ function BackBtn({ children, onClick }: { children: ReactNode; onClick: () => vo
   )
 }
 
+function PaneToggle({
+  mode,
+  onChange,
+}: {
+  mode: PaneMode
+  onChange: (m: PaneMode) => void
+}) {
+  const options: { key: PaneMode; icon: ReactNode; label: string }[] = [
+    { key: "doc", icon: <FileText className="h-3.5 w-3.5" />, label: "Document only" },
+    { key: "split", icon: <Rows2 className="h-3.5 w-3.5" />, label: "Split view" },
+    { key: "fields", icon: <List className="h-3.5 w-3.5" />, label: "Fields only" },
+  ]
+  return (
+    <div className="flex shrink-0 items-center gap-0.5 rounded-md border bg-secondary p-0.5">
+      {options.map((o) => (
+        <button
+          key={o.key}
+          type="button"
+          onClick={() => onChange(o.key)}
+          title={o.label}
+          aria-label={o.label}
+          aria-pressed={mode === o.key}
+          className={cn(
+            "flex h-6 w-7 items-center justify-center rounded transition-colors",
+            mode === o.key
+              ? "bg-card text-primary shadow-sm"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {o.icon}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function TbBtn({ children, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
@@ -698,7 +756,7 @@ function TabBtn({ children, active, count, onClick }: { children: ReactNode; act
       type="button"
       onClick={onClick}
       className={cn(
-        "-mb-px flex select-none items-center gap-1.5 whitespace-nowrap border-b-2 px-4 pb-3 pt-3 text-[13px] font-medium transition-colors",
+        "-mb-px flex shrink-0 select-none items-center gap-1.5 whitespace-nowrap border-b-2 px-4 pb-3 pt-3 text-[13px] font-medium transition-colors",
         active ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground",
       )}
     >
@@ -748,15 +806,15 @@ function KvPanel({
   return (
     <>
       <div className="flex shrink-0 items-center gap-2 border-b bg-card px-4 py-2.5">
-        <span className="flex-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Extracted fields ({pairs.length} of {totalCount})
         </span>
-        <div className="relative">
+        <div className="relative shrink-0">
           <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text" placeholder="Filter fields…" value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            className="h-7 w-44 rounded border bg-secondary pl-7 pr-2 text-xs outline-none focus:border-primary"
+            className="h-7 w-28 rounded border bg-secondary pl-7 pr-2 text-xs outline-none focus:border-primary sm:w-44"
           />
         </div>
       </div>
@@ -863,11 +921,11 @@ function TablesPanel({
   return (
     <>
       <div className="flex shrink-0 items-center gap-2 border-b bg-card px-4 py-2.5">
-        <span className="flex-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Extracted tables</span>
-        <div className="relative">
+        <span className="min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-wider text-muted-foreground">Extracted tables</span>
+        <div className="relative shrink-0">
           <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
           <input type="text" placeholder="Filter content…" value={filter} onChange={(e) => setFilter(e.target.value)}
-            className="h-7 w-44 rounded border bg-secondary pl-7 pr-2 text-xs outline-none focus:border-primary" />
+            className="h-7 w-28 rounded border bg-secondary pl-7 pr-2 text-xs outline-none focus:border-primary sm:w-44" />
         </div>
       </div>
       <div className="kv-scroll min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
