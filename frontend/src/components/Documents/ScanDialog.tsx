@@ -18,6 +18,7 @@ import {
 } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
+import { CropEditor } from "@/components/Documents/CropEditor"
 import {
   buildScanPdf,
   cssFilterFor,
@@ -29,7 +30,7 @@ import {
 } from "@/lib/scan"
 import { cn } from "@/lib/utils"
 
-type View = "camera" | "review"
+type View = "camera" | "crop" | "review"
 
 interface ScanDialogProps {
   open: boolean
@@ -64,6 +65,7 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
   const [retakeId, setRetakeId] = useState<string | null>(null)
+  const [cropSrc, setCropSrc] = useState<string | null>(null)
   const [building, setBuilding] = useState(false)
   const [previews, setPreviews] = useState<Record<string, string>>({})
   const [dragIndex, setDragIndex] = useState<number | null>(null)
@@ -142,6 +144,7 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
       setPages([])
       setFilter("color")
       setRetakeId(null)
+      setCropSrc(null)
       setBuilding(false)
       setPreviews({})
       setCameraError(null)
@@ -228,22 +231,40 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
     if (!ctx) return
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
     const src = canvas.toDataURL("image/jpeg", 0.92)
+    // Move to the crop/border-adjust step before the page is committed.
+    setCropSrc(src)
+    setView("crop")
+  }, [])
 
-    if (retakeId) {
-      setPages((prev) =>
-        prev.map((p) =>
-          p.id === retakeId ? { ...p, src, rotation: 0, rev: nextRev() } : p,
-        ),
-      )
-      setRetakeId(null)
-      setView("review")
-    } else {
-      setPages((prev) => [
-        ...prev,
-        { id: newId(), src, rotation: 0, rev: nextRev() },
-      ])
-    }
-  }, [retakeId, nextRev])
+  // Commit a finished page (cropped or skipped) into the page list, then either
+  // return to the camera to scan the next page or back to review after a retake.
+  const commitPage = useCallback(
+    (src: string) => {
+      if (retakeId) {
+        setPages((prev) =>
+          prev.map((p) =>
+            p.id === retakeId ? { ...p, src, rotation: 0, rev: nextRev() } : p,
+          ),
+        )
+        setRetakeId(null)
+        setCropSrc(null)
+        setView("review")
+      } else {
+        setPages((prev) => [
+          ...prev,
+          { id: newId(), src, rotation: 0, rev: nextRev() },
+        ])
+        setCropSrc(null)
+        setView("camera")
+      }
+    },
+    [retakeId, nextRev],
+  )
+
+  const cancelCrop = useCallback(() => {
+    setCropSrc(null)
+    setView("camera")
+  }, [])
 
   const handleImport = useCallback(
     (files: FileList | null) => {
@@ -344,6 +365,7 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         if (lightboxIndex !== null) setLightboxIndex(null)
+        else if (view === "crop") cancelCrop()
         else onClose()
       } else if (lightboxIndex !== null && e.key === "ArrowRight") {
         setLightboxIndex((i) =>
@@ -355,7 +377,7 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [open, onClose, lightboxIndex, pages.length])
+  }, [open, onClose, lightboxIndex, pages.length, view, cancelCrop])
 
   if (!open) return null
 
@@ -373,7 +395,14 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
         }}
       />
 
-      {view === "camera" ? (
+      {view === "crop" && cropSrc ? (
+        <CropEditor
+          src={cropSrc}
+          onConfirm={commitPage}
+          onSkip={commitPage}
+          onCancel={cancelCrop}
+        />
+      ) : view === "camera" ? (
         <CameraView
           videoRef={videoRef}
           starting={starting}
@@ -794,14 +823,18 @@ function ReviewView({
               </div>
             ))}
 
-            {/* Add page tile */}
+            {/* Add page tile — mirrors a page card's height (aspect image area
+                + a spacer matching the controls bar) so the grid stays even. */}
             <button
               type="button"
               onClick={onAddPages}
-              className="flex aspect-[3/4] min-h-[180px] flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-neutral-300 text-neutral-500 transition-colors hover:border-primary hover:text-primary"
+              className="flex flex-col overflow-hidden rounded-xl border-2 border-dashed border-neutral-300 text-neutral-500 transition-colors hover:border-primary hover:text-primary"
             >
-              <Plus className="h-7 w-7" />
-              <span className="text-sm font-medium">Add page</span>
+              <span className="flex aspect-[3/4] flex-col items-center justify-center gap-2">
+                <Plus className="h-7 w-7" />
+                <span className="text-sm font-medium">Add page</span>
+              </span>
+              <span className="h-[41px] shrink-0" />
             </button>
           </div>
         )}
