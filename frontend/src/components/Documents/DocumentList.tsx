@@ -546,7 +546,17 @@ export function DocumentList() {
                   return (
                     <tr
                       key={d.id}
-                      className="group border-b transition-colors last:border-b-0 hover:bg-[#f4f8fd]"
+                      onClick={() =>
+                        canOpen &&
+                        navigate({
+                          to: "/documents/$docId",
+                          params: { docId: d.id },
+                        })
+                      }
+                      className={cn(
+                        "group border-b transition-colors last:border-b-0 hover:bg-[#f4f8fd]",
+                        canOpen && "cursor-pointer",
+                      )}
                     >
                       <td className="px-4">
                         <input
