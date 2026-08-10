@@ -222,6 +222,7 @@ def update_document_fields(
 
 
 class ReviewUpdate(BaseModel):
+    version: int = Field(ge=1)
     review_status: Literal["approved", "rejected"]
     review_comment: str | None = Field(default=None, max_length=4096)
 
@@ -250,14 +251,34 @@ def update_document_review(
                 status_code=400,
                 detail="A reason is required when rejecting a document",
             )
-        doc.review_comment = comment
     else:
-        doc.review_comment = (body.review_comment or "").strip() or None
-    doc.review_status = body.review_status
-    doc.reviewed_at = datetime.now(timezone.utc)
-    session.add(doc)
+        comment = (body.review_comment or "").strip() or None
+
+    document_table = cast(Any, Document).__table__
+    result = session.exec(
+        update(document_table)
+        .where(
+            document_table.c.id == doc_id,
+            document_table.c.version == body.version,
+        )
+        .values(
+            version=document_table.c.version + 1,
+            review_status=body.review_status,
+            review_comment=comment,
+            reviewed_at=datetime.now(timezone.utc),
+        )
+    )
+    if result.rowcount != 1:
+        session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Document was changed by another reviewer",
+        )
     session.commit()
-    session.refresh(doc)
+    session.expire_all()
+    doc = session.get(Document, doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
     detail = DocumentDetail.model_validate(doc, from_attributes=True)
     detail.page_images = _page_image_paths(doc)
     return detail

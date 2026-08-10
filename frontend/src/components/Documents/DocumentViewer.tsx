@@ -73,6 +73,7 @@ type EditDraft =
   | { kind: "bol-not-found"; bolFieldIndex: number; label: string; current: string }
 
 type EditTarget = EditDraft & { version: number }
+type ReviewTarget = { decision: ReviewStatus; version: number }
 
 const ZOOM_LEVELS = [40, 45, 50, 60, 65, 70, 75, 90, 100, 125, 150, 175, 200] as const
 
@@ -110,7 +111,7 @@ export function DocumentViewer({ docId }: { docId: string }) {
   const [paneMode, setPaneMode] = useState<PaneMode>("split")
   const [filter, setFilter] = useState("")
   const [editing, setEditing] = useState<EditTarget | null>(null)
-  const [reviewDecision, setReviewDecision] = useState<ReviewStatus | null>(null)
+  const [reviewTarget, setReviewTarget] = useState<ReviewTarget | null>(null)
 
   const layoutRef = useRef<HTMLDivElement>(null)
   const pdfScrollRef = useRef<HTMLDivElement>(null)
@@ -182,7 +183,7 @@ export function DocumentViewer({ docId }: { docId: string }) {
   })
 
   const reviewMutation = useMutation({
-    mutationFn: (vars: { review_status: ReviewStatus; review_comment: string | null }) =>
+    mutationFn: (vars: Parameters<typeof reviewDocument>[1]) =>
       reviewDocument(docId, vars),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["document", docId] })
@@ -190,9 +191,23 @@ export function DocumentViewer({ docId }: { docId: string }) {
       toast.success(
         data.review_status === "approved" ? "Document approved" : "Document rejected",
       )
-      setReviewDecision(null)
+      setReviewTarget(null)
     },
-    onError: (e: Error) => toast.error("Review failed", { description: e.message }),
+    onError: async (error: unknown) => {
+      if (axios.isAxiosError(error) && error.response?.status === 409) {
+        setReviewTarget(null)
+        await queryClient.refetchQueries({ queryKey: ["document", docId] })
+        await queryClient.invalidateQueries({ queryKey: ["documents"] })
+        toast.warning("Review conflict", {
+          description:
+            "This document was changed by another reviewer. Review the latest values and status before submitting your decision.",
+        })
+        return
+      }
+      toast.error("Review failed", {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    },
   })
 
   const filteredPairs = useMemo(
@@ -445,7 +460,10 @@ export function DocumentViewer({ docId }: { docId: string }) {
               <button
                 type="button"
                 disabled={reviewed}
-                onClick={() => !reviewed && setReviewDecision("approved")}
+                onClick={() =>
+                  !reviewed &&
+                  setReviewTarget({ decision: "approved", version: doc.version })
+                }
                 title={
                   isApproved
                     ? "Approved"
@@ -468,7 +486,10 @@ export function DocumentViewer({ docId }: { docId: string }) {
               <button
                 type="button"
                 disabled={reviewed}
-                onClick={() => !reviewed && setReviewDecision("rejected")}
+                onClick={() =>
+                  !reviewed &&
+                  setReviewTarget({ decision: "rejected", version: doc.version })
+                }
                 title={
                   isRejected
                     ? "Rejected"
@@ -640,16 +661,20 @@ export function DocumentViewer({ docId }: { docId: string }) {
       />
 
       <ReviewDialog
-        open={reviewDecision !== null}
-        decision={reviewDecision ?? "approved"}
+        open={reviewTarget !== null}
+        decision={reviewTarget?.decision ?? "approved"}
         filename={doc.original_filename}
         currentStatus={doc.review_status}
         currentComment={doc.review_comment}
         isSaving={reviewMutation.isPending}
-        onClose={() => !reviewMutation.isPending && setReviewDecision(null)}
+        onClose={() => !reviewMutation.isPending && setReviewTarget(null)}
         onConfirm={(comment) => {
-          if (!reviewDecision) return
-          reviewMutation.mutate({ review_status: reviewDecision, review_comment: comment })
+          if (!reviewTarget) return
+          reviewMutation.mutate({
+            version: reviewTarget.version,
+            review_status: reviewTarget.decision,
+            review_comment: comment,
+          })
         }}
       />
       <DocumentChatWidget documentId={docId} documentName={doc.original_filename} />

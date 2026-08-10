@@ -143,7 +143,11 @@ export async function updateDocumentFields(
 
 export async function reviewDocument(
   id: string,
-  payload: { review_status: ReviewStatus; review_comment?: string | null },
+  payload: {
+    version: number
+    review_status: ReviewStatus
+    review_comment?: string | null
+  },
 ): Promise<DocumentDetail> {
   const { data } = await api.patch<DocumentDetail>(
     `/documents/${id}/review`,
