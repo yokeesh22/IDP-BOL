@@ -552,25 +552,25 @@ function CameraView({
   onReview,
 }: CameraViewProps) {
   return (
-    <>
+    <div className="relative min-h-0 flex-1 overflow-hidden">
       {/* Top bar */}
-      <div className="flex items-center justify-between px-4 py-3">
+      <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <button
           type="button"
           onClick={onClose}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/40 text-white shadow-sm transition-colors hover:bg-black/60"
           aria-label="Close scanner"
         >
           <X className="h-5 w-5" />
         </button>
-        <div className="text-sm font-medium">
+        <div className="rounded-full bg-black/40 px-3 py-1.5 text-sm font-medium shadow-sm">
           {retaking ? "Retake page" : "Scan document"}
         </div>
         {hasMultipleCameras ? (
           <button
             type="button"
             onClick={onSwitchCamera}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/40 text-white shadow-sm transition-colors hover:bg-black/60"
             aria-label="Switch camera"
           >
             <SwitchCamera className="h-5 w-5" />
@@ -581,7 +581,7 @@ function CameraView({
       </div>
 
       {/* Viewfinder */}
-      <div className="relative flex-1 overflow-hidden">
+      <div className="absolute inset-0 overflow-hidden">
         {cameraError ? (
           <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
             <Camera className="h-10 w-10 text-white/40" />
@@ -614,10 +614,6 @@ function CameraView({
               autoPlay
               className="h-full w-full object-cover"
             />
-            {/* Document alignment guide */}
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-8">
-              <div className="h-full w-full max-w-3xl rounded-xl border-2 border-dashed border-white/40" />
-            </div>
             {starting && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/40">
                 <Loader2 className="h-8 w-8 animate-spin text-white/80" />
@@ -633,12 +629,12 @@ function CameraView({
       </div>
 
       {/* Controls */}
-      <div className="flex items-center justify-between px-8 py-6">
+      <div className="absolute inset-x-0 bottom-0 z-20 flex items-center justify-between px-8 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-6">
         {/* Import (left) */}
         <button
           type="button"
           onClick={onImport}
-          className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+          className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-black/40 text-white shadow-sm transition-colors hover:bg-black/60"
           aria-label="Import image"
         >
           <ImageIcon className="h-5 w-5" />
@@ -660,7 +656,7 @@ function CameraView({
           type="button"
           onClick={onReview}
           disabled={pageCount === 0}
-          className="relative inline-flex h-12 w-12 items-center justify-center overflow-hidden rounded-lg border border-white/30 bg-white/5 transition-colors hover:bg-white/15 disabled:opacity-40"
+          className="relative inline-flex h-12 w-12 items-center justify-center overflow-hidden rounded-lg border border-white/30 bg-black/40 shadow-sm transition-colors hover:bg-black/60 disabled:opacity-40"
           aria-label={`Review ${pageCount} pages`}
         >
           {lastPreview ? (
@@ -679,7 +675,7 @@ function CameraView({
           )}
         </button>
       </div>
-    </>
+    </div>
   )
 }
 
