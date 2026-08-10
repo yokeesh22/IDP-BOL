@@ -1,11 +1,12 @@
-import uuid
 import secrets
+import uuid
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
+from sqlalchemy import update
 from sqlalchemy.orm import selectinload
 from sqlmodel import col, func, select
 
@@ -16,8 +17,8 @@ from app.models import (
     Document,
     DocumentDetail,
     DocumentMeta,
-    DocumentStatus,
     DocumentsPublic,
+    DocumentStatus,
     Message,
     ReviewStatus,
 )
@@ -165,6 +166,7 @@ def delete_document(
 
 
 class FieldsUpdate(BaseModel):
+    version: int = Field(ge=1)
     key_value_pairs: list[dict[str, Any]] | None = None
     tables: list[dict[str, Any]] | None = None
     bol_kv_fields: list[dict[str, Any]] | None = None
@@ -183,17 +185,37 @@ def update_document_fields(
         raise HTTPException(status_code=404, detail="Document not found")
     if not current_user.is_superuser and doc.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    document_table = cast(Any, Document).__table__
+    values: dict[str, Any] = {"version": document_table.c.version + 1}
     if body.key_value_pairs is not None:
-        doc.key_value_pairs = body.key_value_pairs
+        values["key_value_pairs"] = body.key_value_pairs
     if body.tables is not None:
-        doc.tables = body.tables
+        values["tables"] = body.tables
     if body.bol_kv_fields is not None:
-        doc.bol_kv_fields = body.bol_kv_fields
+        values["bol_kv_fields"] = body.bol_kv_fields
     if body.bol_line_items is not None:
-        doc.bol_line_items = body.bol_line_items
-    session.add(doc)
+        values["bol_line_items"] = body.bol_line_items
+
+    result = session.exec(
+        update(document_table)
+        .where(
+            document_table.c.id == doc_id,
+            document_table.c.version == body.version,
+        )
+        .values(**values)
+    )
+    if result.rowcount != 1:
+        session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Document fields were changed by another reviewer",
+        )
     session.commit()
-    session.refresh(doc)
+    session.expire_all()
+    doc = session.get(Document, doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
     detail = DocumentDetail.model_validate(doc, from_attributes=True)
     detail.page_images = _page_image_paths(doc)
     return detail

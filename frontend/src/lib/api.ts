@@ -73,6 +73,7 @@ export interface ExtractedTable {
 
 export interface DocumentMeta {
   id: string
+  version: number
   filename: string
   original_filename: string
   file_size: number
@@ -126,6 +127,7 @@ export async function deleteDocument(id: string): Promise<void> {
 export async function updateDocumentFields(
   id: string,
   payload: {
+    version: number
     key_value_pairs?: KVPair[]
     tables?: ExtractedTable[]
     bol_kv_fields?: BolKvField[]

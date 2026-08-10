@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
+import axios from "axios"
 import {
   ArrowLeft,
   Check,
@@ -65,11 +66,13 @@ type HighlightState =
   | { type: "kv"; pairIndex: number; field: "key" | "value"; pageNumber: number; polygon: number[][]; confidence: number }
   | { type: "cell"; tableIndex: number; row: number; col: number; pageNumber: number; polygon: number[][]; confidence?: number }
 
-type EditTarget =
+type EditDraft =
   | { kind: "kv-key"; pairIndex: number; current: string }
   | { kind: "kv-value"; pairIndex: number; current: string }
   | { kind: "cell"; tableIndex: number; row: number; col: number; current: string }
   | { kind: "bol-not-found"; bolFieldIndex: number; label: string; current: string }
+
+type EditTarget = EditDraft & { version: number }
 
 const ZOOM_LEVELS = [40, 45, 50, 60, 65, 70, 75, 90, 100, 125, 150, 175, 200] as const
 
@@ -149,6 +152,13 @@ export function DocumentViewer({ docId }: { docId: string }) {
   const kvPairs = useMemo(() => doc?.key_value_pairs || [], [doc])
   const tables = useMemo(() => doc?.tables || [], [doc])
 
+  const beginEdit = useCallback(
+    (target: EditDraft) => {
+      if (doc) setEditing({ ...target, version: doc.version })
+    },
+    [doc],
+  )
+
   const saveMutation = useMutation({
     mutationFn: (payload: Parameters<typeof updateDocumentFields>[1]) =>
       updateDocumentFields(docId, payload),
@@ -156,7 +166,19 @@ export function DocumentViewer({ docId }: { docId: string }) {
       queryClient.invalidateQueries({ queryKey: ["document", docId] })
       toast.success("Saved", { description: "Your edit was persisted." })
     },
-    onError: (e: Error) => toast.error("Save failed", { description: e.message }),
+    onError: async (error: unknown) => {
+      if (axios.isAxiosError(error) && error.response?.status === 409) {
+        await queryClient.refetchQueries({ queryKey: ["document", docId] })
+        toast.warning("Edit conflict", {
+          description:
+            "This document's fields were changed by another reviewer. Review the latest values before saving again.",
+        })
+        return
+      }
+      toast.error("Save failed", {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    },
   })
 
   const reviewMutation = useMutation({
@@ -243,7 +265,7 @@ export function DocumentViewer({ docId }: { docId: string }) {
         if (editing.kind === "kv-key") return { ...p, key: { ...p.key, content: newValue } }
         return { ...p, value: { ...p.value, content: newValue } }
       })
-      saveMutation.mutate({ key_value_pairs: updated })
+      saveMutation.mutate({ version: editing.version, key_value_pairs: updated })
     } else if (editing.kind === "cell") {
       const updated = tables.map((t, ti) => {
         if (ti !== editing.tableIndex) return t
@@ -255,7 +277,7 @@ export function DocumentViewer({ docId }: { docId: string }) {
           }),
         }
       })
-      saveMutation.mutate({ tables: updated })
+      saveMutation.mutate({ version: editing.version, tables: updated })
     } else if (editing.kind === "bol-not-found") {
       // Create a new KV pair for the manually filled field
       const newPairIndex = kvPairs.length
@@ -270,7 +292,11 @@ export function DocumentViewer({ docId }: { docId: string }) {
           ? { ...f, value: newValue, found: true, kv_pair_index: newPairIndex }
           : f,
       )
-      saveMutation.mutate({ key_value_pairs: updatedKvPairs, bol_kv_fields: updatedBolFields })
+      saveMutation.mutate({
+        version: editing.version,
+        key_value_pairs: updatedKvPairs,
+        bol_kv_fields: updatedBolFields,
+      })
     }
     setEditing(null)
   }
@@ -566,7 +592,7 @@ export function DocumentViewer({ docId }: { docId: string }) {
               setFilter={setFilter}
               highlight={highlight}
               onClickField={handleKVClick}
-              onEdit={setEditing}
+              onEdit={beginEdit}
             />
           ) : activeTab === "tables" ? (
             <TablesPanel
@@ -576,7 +602,7 @@ export function DocumentViewer({ docId }: { docId: string }) {
               highlight={highlight}
               onClickCell={handleCellClick}
               onEditCell={(tIdx, cell) =>
-                setEditing({ kind: "cell", tableIndex: tIdx, row: cell.row_index, col: cell.column_index, current: cell.content })
+                beginEdit({ kind: "cell", tableIndex: tIdx, row: cell.row_index, col: cell.column_index, current: cell.content })
               }
             />
           ) : (
@@ -589,7 +615,7 @@ export function DocumentViewer({ docId }: { docId: string }) {
               highlight={highlight}
               onClickField={handleKVClick}
               onClickCell={handleCellClick}
-              onEdit={(t) => setEditing(t)}
+              onEdit={beginEdit}
             />
           )}
         </div>
@@ -801,7 +827,7 @@ function KvPanel({
   setFilter: (s: string) => void
   highlight: HighlightState | null
   onClickField: (pair: KVPair, idx: number, field: "key" | "value") => void
-  onEdit: (t: EditTarget) => void
+  onEdit: (t: EditDraft) => void
 }) {
   return (
     <>

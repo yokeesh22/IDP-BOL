@@ -83,6 +83,7 @@ class DocumentBase(SQLModel):
 
 class Document(DocumentBase, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    version: int = Field(default=1, nullable=False)
     filename: str = Field(max_length=512)
     file_size: int = Field(default=0)
     status: str = Field(default=DocumentStatus.PENDING, index=True, max_length=32)
@@ -126,6 +127,7 @@ class Document(DocumentBase, table=True):
 
 class DocumentMeta(SQLModel):
     id: uuid.UUID
+    version: int
     filename: str
     original_filename: str
     file_size: int
