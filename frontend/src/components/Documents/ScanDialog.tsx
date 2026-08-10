@@ -90,14 +90,31 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
         if (!navigator.mediaDevices?.getUserMedia) {
           throw new Error("Camera access is not supported in this browser")
         }
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: facing },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-          },
-          audio: false,
-        })
+        const videoSize = {
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        }
+        let stream: MediaStream
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              ...videoSize,
+              facingMode: { exact: facing },
+            },
+            audio: false,
+          })
+        } catch (err) {
+          if (!(err instanceof DOMException) || err.name !== "OverconstrainedError") {
+            throw err
+          }
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              ...videoSize,
+              facingMode: { ideal: facing },
+            },
+            audio: false,
+          })
+        }
         streamRef.current = stream
         if (videoRef.current) {
           videoRef.current.srcObject = stream
@@ -107,9 +124,13 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
         try {
           const devices = await navigator.mediaDevices.enumerateDevices()
           const cams = devices.filter((d) => d.kind === "videoinput")
-          setHasMultipleCameras(cams.length > 1)
+          setHasMultipleCameras(
+            cams.length > 1 || window.matchMedia("(pointer: coarse)").matches,
+          )
         } catch {
-          setHasMultipleCameras(false)
+          setHasMultipleCameras(
+            window.matchMedia("(pointer: coarse)").matches,
+          )
         }
       } catch (err) {
         const msg =
