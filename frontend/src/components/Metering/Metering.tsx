@@ -70,17 +70,15 @@ function localDayKey(d: Date): string {
 }
 
 function formatMoney(n: number, currency: string): string {
-  const abs = Math.abs(n)
-  const maxDigits = abs >= 1 ? 2 : abs >= 0.01 ? 4 : 6
   try {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency,
       minimumFractionDigits: 2,
-      maximumFractionDigits: maxDigits,
+      maximumFractionDigits: 2,
     }).format(n)
   } catch {
-    return `${currency} ${n.toFixed(maxDigits)}`
+    return `${currency} ${n.toFixed(2)}`
   }
 }
 
