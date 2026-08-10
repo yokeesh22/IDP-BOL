@@ -120,9 +120,8 @@ export async function renderPagePreview(
   return canvas.toDataURL("image/jpeg", 0.85)
 }
 
-/** Assemble the ordered scan pages into a single PDF File ready for upload.
- *  Each page of the PDF is sized to its image so nothing is cropped or
- *  letter-boxed. */
+/** Assemble scans on standard A4 sheets so camera pixels are never interpreted
+ *  as enormous physical PDF page dimensions. */
 export async function buildScanPdf(
   pages: ScanPage[],
   filter: ScanFilter,
@@ -142,15 +141,28 @@ export async function buildScanPdf(
 
     if (!pdf) {
       pdf = new jsPDF({
-        unit: "px",
-        format: [w, h],
+        unit: "mm",
+        format: "a4",
         orientation,
         compress: true,
       })
     } else {
-      pdf.addPage([w, h], orientation)
+      pdf.addPage("a4", orientation)
     }
-    pdf.addImage(jpeg, "JPEG", 0, 0, w, h)
+
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const pageHeight = pdf.internal.pageSize.getHeight()
+    const scale = Math.min(pageWidth / w, pageHeight / h)
+    const imageWidth = w * scale
+    const imageHeight = h * scale
+    pdf.addImage(
+      jpeg,
+      "JPEG",
+      (pageWidth - imageWidth) / 2,
+      (pageHeight - imageHeight) / 2,
+      imageWidth,
+      imageHeight,
+    )
   }
 
   if (!pdf) throw new Error("Failed to build PDF")
