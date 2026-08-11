@@ -154,7 +154,7 @@ class Settings(BaseSettings):
 
     # Local storage (used as a fallback when Azure Blob Storage is not configured)
     UPLOAD_DIR: str = "uploads"
-    PDF_RENDER_DPI: int = 216  # 3x of 72 DPI; matches Form Recognizer inch coords
+    PDF_RENDER_DPI: int = 144  # 2x of 72 DPI; matches Form Recognizer inch coords
     PROCESSOR_CONCURRENCY: int = 3
 
     # Azure Blob Storage. When both values are set, uploaded PDFs and rendered

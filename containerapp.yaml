@@ -108,7 +108,7 @@ properties:
           - name: UPLOAD_DIR
             value: uploads
           - name: PDF_RENDER_DPI
-            value: "216"
+            value: "144"
           # Per-worker background processing concurrency. Effective concurrency
           # across the container is FASTAPI_WORKERS × PROCESSOR_CONCURRENCY
           # (here 2 × 2 = 4 concurrent renders, sized for 4 vCPU / 4 GiB).

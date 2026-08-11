@@ -76,9 +76,6 @@ type EditTarget = EditDraft & { version: number }
 type ReviewTarget = { decision: ReviewStatus; version: number }
 
 const ZOOM_LEVELS = [40, 45, 50, 60, 65, 70, 75, 90, 100, 125, 150, 175, 200] as const
-const PAGE_RENDER_DPI = 216
-const CSS_PDF_DPI = 72
-const PAGE_RENDER_SCALE = PAGE_RENDER_DPI / CSS_PDF_DPI
 
 function pickDefaultZoomIdx(): number {
   if (typeof window === "undefined") return ZOOM_LEVELS.indexOf(100)
@@ -136,8 +133,9 @@ export function DocumentViewer({ docId }: { docId: string }) {
     return () => mql.removeEventListener("change", onChange)
   }, [])
 
-  // Keep PDF physical dimensions stable while using a denser page raster.
-  const renderedWidth = naturalImgW > 0 ? (naturalImgW / PAGE_RENDER_SCALE) * (ZOOM_LEVELS[zoomIdx] / 100) : 0
+  // Pages are rendered at 144 DPI (2× CSS baseline). At 100% zoom the displayed
+  // width is naturalWidth / 2, keeping pixel density correct on standard screens.
+  const renderedWidth = naturalImgW > 0 ? (naturalImgW / 2) * (ZOOM_LEVELS[zoomIdx] / 100) : 0
 
   const { data: doc, isLoading, error } = useQuery({
     queryKey: ["document", docId],
@@ -1135,9 +1133,10 @@ function RubberBandOverlay({ polygon, imageEl, confidence }: { polygon: number[]
 
   // Polygon coordinates are in inches; multiply by DPI to get pixel offsets,
   // then scale to the element's rendered dimensions.
+  const DPI = 144
   const scaleX = dims.dispW / dims.natW
   const scaleY = dims.dispH / dims.natH
-  const points = polygon.map(([x, y]) => [x * PAGE_RENDER_DPI * scaleX, y * PAGE_RENDER_DPI * scaleY] as [number, number])
+  const points = polygon.map(([x, y]) => [x * DPI * scaleX, y * DPI * scaleY] as [number, number])
   const xs = points.map(([x]) => x), ys = points.map(([, y]) => y)
   const minX = Math.min(...xs), minY = Math.min(...ys), maxX = Math.max(...xs), maxY = Math.max(...ys)
   const pad = 6
@@ -1191,6 +1190,7 @@ function ConnectorLine({
       // imgRect already reflects the rotated bounding box on screen, so we
       // can't read x/y directly off the rotated DOM element — we have to do
       // the math ourselves to land on the actual rotated edge.
+      const DPI = 144
       const natW = imageEl.naturalWidth
       const natH = imageEl.naturalHeight
       const renderedW = imgRect.width
@@ -1203,8 +1203,8 @@ function ConnectorLine({
       const scaleX = unrotW / natW
       const scaleY = unrotH / natH
 
-      const xs = highlight.polygon.map(([x]) => x * PAGE_RENDER_DPI * scaleX)
-      const ys = highlight.polygon.map(([, y]) => y * PAGE_RENDER_DPI * scaleY)
+      const xs = highlight.polygon.map(([x]) => x * DPI * scaleX)
+      const ys = highlight.polygon.map(([, y]) => y * DPI * scaleY)
       const minX = Math.min(...xs), maxX = Math.max(...xs)
       const minY = Math.min(...ys), maxY = Math.max(...ys)
 

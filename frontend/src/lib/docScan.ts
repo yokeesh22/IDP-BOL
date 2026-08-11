@@ -132,7 +132,7 @@ function clampQuad(q: Quad): Quad {
 
 // ── Dependency-free perspective warp ──────────────────────────────────────────
 
-const MAX_OUTPUT_EDGE = 2200
+const MAX_OUTPUT_EDGE = 1600
 
 function dist(a: Pt, b: Pt): number {
   return Math.hypot(a.x - b.x, a.y - b.y)
