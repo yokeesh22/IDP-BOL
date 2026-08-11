@@ -475,7 +475,7 @@ export function DocumentList() {
             Manage, extract, and review your organization's documents
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
           <button
             type="button"
             onClick={() => setReportOpen(true)}
