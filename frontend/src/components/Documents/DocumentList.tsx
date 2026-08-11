@@ -13,7 +13,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react"
-import { useCallback, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { ReportDialog } from "@/components/Common/ReportDialog"
 import { ScanDialog } from "@/components/Documents/ScanDialog"
@@ -190,11 +190,61 @@ const ownerColor = "#016ac9"
 
 const PAGE_SIZE = 10
 
+type WebkitFullscreenDocument = Document & {
+  webkitFullscreenElement?: Element
+  webkitExitFullscreen?: () => Promise<void> | void
+}
+
+type WebkitFullscreenElement = HTMLElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void
+}
+
+function requestPageFullscreen(): Promise<void> | null {
+  const fullscreenDocument = document as WebkitFullscreenDocument
+  if (
+    document.fullscreenElement ||
+    fullscreenDocument.webkitFullscreenElement
+  ) {
+    return null
+  }
+  const root = document.documentElement as WebkitFullscreenElement
+  const request =
+    root.requestFullscreen?.bind(root) ??
+    root.webkitRequestFullscreen?.bind(root)
+  if (!request) return null
+  try {
+    return Promise.resolve(request())
+  } catch (error) {
+    return Promise.reject(error)
+  }
+}
+
+function exitPageFullscreen(): Promise<void> {
+  const fullscreenDocument = document as WebkitFullscreenDocument
+  if (
+    !document.fullscreenElement &&
+    !fullscreenDocument.webkitFullscreenElement
+  ) {
+    return Promise.resolve()
+  }
+  const exit =
+    document.exitFullscreen?.bind(document) ??
+    fullscreenDocument.webkitExitFullscreen?.bind(fullscreenDocument)
+  if (!exit) return Promise.resolve()
+  try {
+    return Promise.resolve(exit())
+  } catch (error) {
+    return Promise.reject(error)
+  }
+}
+
 export function DocumentList() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { user } = useAuth()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const fullscreenRequestRef = useRef<Promise<void> | null>(null)
+  const scannerOwnsFullscreenRef = useRef(false)
 
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<"" | CombinedStatus>("")
@@ -203,6 +253,47 @@ export function DocumentList() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [reportOpen, setReportOpen] = useState(false)
   const [scanOpen, setScanOpen] = useState(false)
+
+  const openScanner = useCallback(() => {
+    const request = requestPageFullscreen()
+    fullscreenRequestRef.current = request
+    if (request) {
+      void request
+        .then(() => {
+          if (fullscreenRequestRef.current === request) {
+            scannerOwnsFullscreenRef.current = true
+          } else {
+            void exitPageFullscreen()
+          }
+        })
+        .catch(() => {
+          if (fullscreenRequestRef.current === request) {
+            fullscreenRequestRef.current = null
+          }
+        })
+    }
+    setScanOpen(true)
+  }, [])
+
+  const closeScanner = useCallback(() => {
+    setScanOpen(false)
+    fullscreenRequestRef.current = null
+    if (scannerOwnsFullscreenRef.current) {
+      scannerOwnsFullscreenRef.current = false
+      void exitPageFullscreen()
+    }
+  }, [])
+
+  useEffect(
+    () => () => {
+      fullscreenRequestRef.current = null
+      if (scannerOwnsFullscreenRef.current) {
+        scannerOwnsFullscreenRef.current = false
+        void exitPageFullscreen()
+      }
+    },
+    [],
+  )
 
   const { data: documents = [], isLoading } = useQuery({
     queryKey: ["documents"],
@@ -396,7 +487,7 @@ export function DocumentList() {
           </button>
           <button
             type="button"
-            onClick={() => setScanOpen(true)}
+            onClick={openScanner}
             className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-md border bg-card px-3.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
           >
             <ScanLine className="h-4 w-4" />
@@ -715,7 +806,7 @@ export function DocumentList() {
 
       <ScanDialog
         open={scanOpen}
-        onClose={() => setScanOpen(false)}
+        onClose={closeScanner}
         onComplete={handleScanComplete}
       />
     </div>
