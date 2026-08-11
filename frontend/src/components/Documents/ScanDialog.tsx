@@ -814,7 +814,7 @@ function CameraView({
       </div>
 
       {zoomRange && !cameraError && (
-        <div className="absolute bottom-[calc(max(1.5rem,env(safe-area-inset-bottom))+6.5rem)] left-1/2 z-20 flex w-[min(17rem,calc(100%-2rem))] -translate-x-1/2 items-center gap-3 rounded-full bg-black/50 px-4 py-2 text-white shadow-sm backdrop-blur-sm">
+        <div className="absolute bottom-[calc(max(1.5rem,env(safe-area-inset-bottom))+6.5rem)] left-1/2 z-20 flex w-[min(17rem,calc(100%-2rem))] -translate-x-1/2 items-center gap-3 rounded-full bg-black/40 px-4 py-2 text-white shadow-sm backdrop-blur-sm">
           <ZoomOut className="h-4 w-4 shrink-0" />
           <input
             type="range"
