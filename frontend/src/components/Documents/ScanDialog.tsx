@@ -612,7 +612,7 @@ function CameraView({
               playsInline
               muted
               autoPlay
-              className="h-full w-full object-cover"
+              className="h-full w-full object-contain"
             />
             {starting && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/40">
