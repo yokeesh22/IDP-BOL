@@ -10,15 +10,25 @@ import {
   Loader2,
   Maximize2,
   Plus,
+  Ratio,
   RefreshCw,
   RotateCw,
   SwitchCamera,
   Trash2,
   X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { CropEditor } from "@/components/Documents/CropEditor"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   buildScanPdf,
   cssFilterFor,
@@ -31,6 +41,35 @@ import {
 import { cn } from "@/lib/utils"
 
 type View = "camera" | "crop" | "review"
+type CameraAspectRatio = "auto" | "4:3" | "16:9"
+
+interface ZoomRange {
+  min: number
+  max: number
+  step: number
+  value: number
+  mode: "hardware" | "digital"
+}
+
+type ZoomCapabilities = MediaTrackCapabilities & {
+  zoom?: { min: number; max: number; step: number }
+}
+
+type ZoomSettings = MediaTrackSettings & { zoom?: number }
+type ZoomConstraint = MediaTrackConstraintSet & { zoom: number }
+
+function cameraVideoSize(
+  aspectRatio: CameraAspectRatio,
+  exact = false,
+): MediaTrackConstraints {
+  if (aspectRatio === "auto") return { width: { ideal: 1920 } }
+  const ratio = aspectRatio === "4:3" ? 4 / 3 : 16 / 9
+  return {
+    width: { ideal: 1920 },
+    height: { ideal: aspectRatio === "4:3" ? 1440 : 1080 },
+    aspectRatio: exact ? { exact: ratio } : { ideal: ratio },
+  }
+}
 
 interface ScanDialogProps {
   open: boolean
@@ -50,6 +89,7 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
+  const aspectRatioRef = useRef<CameraAspectRatio>("auto")
   // Monotonic counter used to version a page's image so preview caches refresh
   // whenever the underlying capture changes (e.g. retake).
   const revRef = useRef(0)
@@ -61,6 +101,9 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
   const [facingMode, setFacingMode] = useState<"environment" | "user">(
     "environment",
   )
+  const [aspectRatio, setAspectRatio] =
+    useState<CameraAspectRatio>("auto")
+  const [zoomRange, setZoomRange] = useState<ZoomRange | null>(null)
   const [hasMultipleCameras, setHasMultipleCameras] = useState(false)
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
@@ -86,14 +129,12 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
       stopCamera()
       setStarting(true)
       setCameraError(null)
+      setZoomRange(null)
       try {
         if (!navigator.mediaDevices?.getUserMedia) {
           throw new Error("Camera access is not supported in this browser")
         }
-        const videoSize = {
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-        }
+        const videoSize = cameraVideoSize(aspectRatioRef.current)
         let stream: MediaStream
         try {
           stream = await navigator.mediaDevices.getUserMedia({
@@ -119,6 +160,35 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
         if (videoRef.current) {
           videoRef.current.srcObject = stream
           await videoRef.current.play().catch(() => {})
+        }
+        const videoTrack = stream.getVideoTracks()[0]
+        const capabilities =
+          videoTrack && typeof videoTrack.getCapabilities === "function"
+            ? (videoTrack.getCapabilities() as ZoomCapabilities)
+            : undefined
+        const zoom = capabilities?.zoom
+        if (
+          zoom &&
+          Number.isFinite(zoom.min) &&
+          Number.isFinite(zoom.max) &&
+          zoom.max > zoom.min
+        ) {
+          const settings = videoTrack.getSettings() as ZoomSettings
+          setZoomRange({
+            min: zoom.min,
+            max: zoom.max,
+            step: zoom.step || 0.1,
+            value: settings.zoom ?? zoom.min,
+            mode: "hardware",
+          })
+        } else {
+          setZoomRange({
+            min: 1,
+            max: 3,
+            step: 0.1,
+            value: 1,
+            mode: "digital",
+          })
         }
         // Detect whether a front/back toggle makes sense.
         try {
@@ -147,6 +217,53 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
     [stopCamera],
   )
 
+  const applyAspectRatio = useCallback(
+    async (nextAspectRatio: CameraAspectRatio) => {
+      const videoTrack = streamRef.current?.getVideoTracks()[0]
+      if (!videoTrack) return
+      try {
+        await videoTrack.applyConstraints(
+          cameraVideoSize(nextAspectRatio, nextAspectRatio !== "auto"),
+        )
+        aspectRatioRef.current = nextAspectRatio
+        setAspectRatio(nextAspectRatio)
+        toast.success(
+          `Aspect ratio set to ${nextAspectRatio === "auto" ? "Auto" : nextAspectRatio}`,
+        )
+      } catch {
+        toast.error(`${nextAspectRatio} is not available on this camera`)
+      }
+    },
+    [],
+  )
+
+  const applyZoom = useCallback(
+    async (value: number) => {
+      if (zoomRange?.mode === "digital") {
+        setZoomRange((current) =>
+          current ? { ...current, value } : current,
+        )
+        return
+      }
+      const videoTrack = streamRef.current?.getVideoTracks()[0]
+      if (!videoTrack) return
+      try {
+        await videoTrack.applyConstraints({
+          advanced: [{ zoom: value } as ZoomConstraint],
+        })
+        const settings = videoTrack.getSettings() as ZoomSettings
+        setZoomRange((current) =>
+          current
+            ? { ...current, value: settings.zoom ?? value }
+            : current,
+        )
+      } catch {
+        toast.error("This camera could not apply that zoom level")
+      }
+    },
+    [zoomRange?.mode],
+  )
+
   // Manage the camera lifecycle: run only while the dialog is open and the
   // camera view is active.
   useEffect(() => {
@@ -164,6 +281,9 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
       setView("camera")
       setPages([])
       setFilter("color")
+      aspectRatioRef.current = "auto"
+      setAspectRatio("auto")
+      setZoomRange(null)
       setRetakeId(null)
       setCropSrc(null)
       setBuilding(false)
@@ -250,12 +370,26 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
     canvas.height = video.videoHeight
     const ctx = canvas.getContext("2d")
     if (!ctx) return
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+    const digitalZoom =
+      zoomRange?.mode === "digital" ? zoomRange.value : 1
+    const sourceWidth = video.videoWidth / digitalZoom
+    const sourceHeight = video.videoHeight / digitalZoom
+    ctx.drawImage(
+      video,
+      (video.videoWidth - sourceWidth) / 2,
+      (video.videoHeight - sourceHeight) / 2,
+      sourceWidth,
+      sourceHeight,
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    )
     const src = canvas.toDataURL("image/jpeg", 0.92)
     // Move to the crop/border-adjust step before the page is committed.
     setCropSrc(src)
     setView("crop")
-  }, [])
+  }, [zoomRange])
 
   // Commit a finished page (cropped or skipped) into the page list, then either
   // return to the camera to scan the next page or back to review after a retake.
@@ -449,6 +583,11 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
           starting={starting}
           cameraError={cameraError}
           hasMultipleCameras={hasMultipleCameras}
+          aspectRatio={aspectRatio}
+          zoomRange={zoomRange}
+          digitalZoom={
+            zoomRange?.mode === "digital" ? zoomRange.value : 1
+          }
           pageCount={pages.length}
           retaking={retakeId !== null}
           lastPreview={
@@ -459,6 +598,8 @@ export function ScanDialog({ open, onClose, onComplete }: ScanDialogProps) {
           onSwitchCamera={() =>
             setFacingMode((m) => (m === "environment" ? "user" : "environment"))
           }
+          onAspectRatioChange={(value) => void applyAspectRatio(value)}
+          onZoomChange={(value) => void applyZoom(value)}
           onRetry={() => void startCamera(facingMode)}
           onImport={() => importInputRef.current?.click()}
           onReview={() => {
@@ -525,12 +666,17 @@ interface CameraViewProps {
   starting: boolean
   cameraError: string | null
   hasMultipleCameras: boolean
+  aspectRatio: CameraAspectRatio
+  zoomRange: ZoomRange | null
+  digitalZoom: number
   pageCount: number
   retaking: boolean
   lastPreview: string | null
   onClose: () => void
   onCapture: () => void
   onSwitchCamera: () => void
+  onAspectRatioChange: (aspectRatio: CameraAspectRatio) => void
+  onZoomChange: (value: number) => void
   onRetry: () => void
   onImport: () => void
   onReview: () => void
@@ -541,12 +687,17 @@ function CameraView({
   starting,
   cameraError,
   hasMultipleCameras,
+  aspectRatio,
+  zoomRange,
+  digitalZoom,
   pageCount,
   retaking,
   lastPreview,
   onClose,
   onCapture,
   onSwitchCamera,
+  onAspectRatioChange,
+  onZoomChange,
   onRetry,
   onImport,
   onReview,
@@ -554,11 +705,11 @@ function CameraView({
   return (
     <div className="relative min-h-0 flex-1 overflow-hidden">
       {/* Top bar */}
-      <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+      <div className="absolute inset-x-0 top-0 z-20 grid grid-cols-[1fr_auto_1fr] items-center px-8 pb-3 pt-[max(1.5rem,env(safe-area-inset-top))]">
         <button
           type="button"
           onClick={onClose}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/40 text-white shadow-sm transition-colors hover:bg-black/60"
+          className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-black/40 text-white shadow-sm transition-colors hover:bg-black/60"
           aria-label="Close scanner"
         >
           <X className="h-5 w-5" />
@@ -566,18 +717,51 @@ function CameraView({
         <div className="rounded-full bg-black/40 px-3 py-1.5 text-sm font-medium shadow-sm">
           {retaking ? "Retake page" : "Scan document"}
         </div>
-        {hasMultipleCameras ? (
-          <button
-            type="button"
-            onClick={onSwitchCamera}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/40 text-white shadow-sm transition-colors hover:bg-black/60"
-            aria-label="Switch camera"
-          >
-            <SwitchCamera className="h-5 w-5" />
-          </button>
-        ) : (
-          <div className="h-9 w-9" />
-        )}
+        <div className="flex justify-end gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-black/40 text-white shadow-sm transition-colors hover:bg-black/60"
+                aria-label="Select camera aspect ratio"
+                title="Aspect ratio"
+              >
+                <Ratio className="h-5 w-5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="z-[70] border-white/15 bg-black/80 text-white backdrop-blur-sm"
+            >
+              <DropdownMenuRadioGroup
+                value={aspectRatio}
+                onValueChange={(value) =>
+                  onAspectRatioChange(value as CameraAspectRatio)
+                }
+              >
+                <DropdownMenuRadioItem value="4:3" className="focus:bg-white/15 focus:text-white">
+                  4:3 document
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="16:9" className="focus:bg-white/15 focus:text-white">
+                  16:9 wide
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="auto" className="focus:bg-white/15 focus:text-white">
+                  Auto
+                </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {hasMultipleCameras && (
+            <button
+              type="button"
+              onClick={onSwitchCamera}
+              className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-black/40 text-white shadow-sm transition-colors hover:bg-black/60"
+              aria-label="Switch camera"
+            >
+              <SwitchCamera className="h-5 w-5" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Viewfinder */}
@@ -612,7 +796,8 @@ function CameraView({
               playsInline
               muted
               autoPlay
-              className="h-full w-full object-contain"
+              className="h-full w-full object-contain transition-transform duration-150"
+              style={{ transform: `scale(${digitalZoom})` }}
             />
             {starting && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/40">
@@ -627,6 +812,26 @@ function CameraView({
           </>
         )}
       </div>
+
+      {zoomRange && !cameraError && (
+        <div className="absolute bottom-[calc(max(1.5rem,env(safe-area-inset-bottom))+6.5rem)] left-1/2 z-20 flex w-[min(17rem,calc(100%-2rem))] -translate-x-1/2 items-center gap-3 rounded-full bg-black/50 px-4 py-2 text-white shadow-sm backdrop-blur-sm">
+          <ZoomOut className="h-4 w-4 shrink-0" />
+          <input
+            type="range"
+            min={zoomRange.min}
+            max={zoomRange.max}
+            step={zoomRange.step}
+            value={zoomRange.value}
+            onChange={(event) => onZoomChange(Number(event.target.value))}
+            className="h-1.5 min-w-0 flex-1 cursor-pointer accent-white"
+            aria-label="Camera zoom"
+          />
+          <ZoomIn className="h-4 w-4 shrink-0" />
+          <span className="w-9 text-right text-xs font-medium tabular-nums">
+            {zoomRange.value.toFixed(1)}x
+          </span>
+        </div>
+      )}
 
       {/* Controls */}
       <div className="absolute inset-x-0 bottom-0 z-20 flex items-center justify-between px-8 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-6">
@@ -656,14 +861,14 @@ function CameraView({
           type="button"
           onClick={onReview}
           disabled={pageCount === 0}
-          className="relative inline-flex h-12 w-12 items-center justify-center overflow-hidden rounded-lg border border-white/30 bg-black/40 shadow-sm transition-colors hover:bg-black/60 disabled:opacity-40"
+          className="relative inline-flex h-12 w-12 items-center justify-center rounded-full bg-black/40 shadow-sm transition-colors hover:bg-black/60 disabled:opacity-40"
           aria-label={`Review ${pageCount} pages`}
         >
           {lastPreview ? (
             <img
               src={lastPreview}
               alt=""
-              className="h-full w-full object-cover"
+              className="h-full w-full rounded-full object-cover"
             />
           ) : (
             <Check className="h-5 w-5" />

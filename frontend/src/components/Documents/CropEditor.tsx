@@ -161,15 +161,15 @@ export function CropEditor({
           type="button"
           onClick={runAutoDetect}
           disabled={detecting || !ready}
-          className="inline-flex h-9 items-center gap-1.5 rounded-full bg-white/10 px-3 text-sm font-medium transition-colors hover:bg-white/20 disabled:opacity-50"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 transition-colors hover:bg-white/20 disabled:opacity-50"
           aria-label="Auto-detect document"
+          title="Auto-detect document"
         >
           {detecting ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2 className="h-5 w-5 animate-spin" />
           ) : (
-            <Scan className="h-4 w-4" />
+            <Scan className="h-5 w-5" />
           )}
-          Auto
         </button>
       </div>
 
